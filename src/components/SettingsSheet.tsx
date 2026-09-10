@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CheckIcon, SearchIcon, MicIcon } from "./Icons";
+import { NotificationSettings } from "./NotificationSettings";
 import { DEFAULT_SILENCE_MS, readSilenceMs, writeSilenceMs, type VoiceMode } from "./useSpeech";
 
 interface PickerModel {
@@ -183,6 +184,10 @@ export function SettingsSheet({
       <div className="relative flex max-h-[88dvh] flex-col rounded-t-2xl glass safe-bottom">
         <div className="shrink-0 border-b border-edge px-4 pb-3 pt-3">
           <div className="mx-auto mb-3 h-1 w-9 rounded-full bg-edge" />
+
+          <div className="mb-3">
+            <NotificationSettings />
+          </div>
 
           <section className="mb-3">
             <div className="flex items-center gap-2 text-[0.7rem] uppercase tracking-[0.18em] text-mist">

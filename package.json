@@ -22,15 +22,18 @@
   "dependencies": {
     "@prisma/client": "6.19.3",
     "next": "16.3.4",
+    "node-cron": "^4.6.0",
     "prisma": "6.19.3",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.3.3",
     "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/web-push": "^3.6.4",
     "tailwindcss": "4.3.3",
     "tsx": "^4.19.2",
     "typescript": "^5.7.0"

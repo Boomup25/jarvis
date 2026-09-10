@@ -122,3 +122,38 @@ model LogEntry {
 
   @@index([kind, occurredAt])
 }
+
+/// A browser/device that has agreed to receive push notifications.
+model PushSubscription {
+  id        String   @id @default(cuid())
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  /// Rough device description, so you can tell two phones apart when revoking.
+  label     String   @default("")
+  active    Boolean  @default(true)
+  failures  Int      @default(0)
+  lastSentAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([active])
+}
+
+/// Everything JARVIS has pushed. Doubles as the dedupe key store — a rule that
+/// already fired today won't fire again.
+model Notification {
+  id        String   @id @default(cuid())
+  /// brief | workout | task | weather | streak | stale | system
+  kind      String
+  /// Stable per-rule-per-window key, e.g. "workout:2026-09-11".
+  dedupeKey String   @unique
+  title     String
+  body      String
+  url       String   @default("/")
+  delivered Int      @default(0)
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([kind, createdAt])
+  @@index([createdAt])
+}

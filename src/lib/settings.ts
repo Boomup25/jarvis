@@ -14,6 +14,19 @@ export interface Settings {
   voiceId?: string;
   /** Overrides the delivery description in src/lib/tts.ts. */
   voiceInstructions?: string;
+
+  // ---- proactive notifications ----
+  pushEnabled?: boolean;
+  /** Local hour (0-23) the morning brief goes out. */
+  briefHour?: number;
+  /** Quiet window, local hours. Wraps midnight when from > to. */
+  quietFrom?: number;
+  quietTo?: number;
+  /** Notification kinds to suppress. */
+  mutedKinds?: string[];
+  /** For weather. Set from the browser, or left unset to skip weather entirely. */
+  lat?: number;
+  lon?: number;
 }
 
 export async function getSettings(): Promise<Settings> {
@@ -30,6 +43,13 @@ export async function getSettings(): Promise<Settings> {
       typeof data.voiceInstructions === "string" && data.voiceInstructions
         ? data.voiceInstructions
         : undefined,
+    pushEnabled: typeof data.pushEnabled === "boolean" ? data.pushEnabled : undefined,
+    briefHour: typeof data.briefHour === "number" ? data.briefHour : undefined,
+    quietFrom: typeof data.quietFrom === "number" ? data.quietFrom : undefined,
+    quietTo: typeof data.quietTo === "number" ? data.quietTo : undefined,
+    mutedKinds: Array.isArray(data.mutedKinds) ? (data.mutedKinds as string[]) : undefined,
+    lat: typeof data.lat === "number" ? data.lat : undefined,
+    lon: typeof data.lon === "number" ? data.lon : undefined,
   };
 }
 

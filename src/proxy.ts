@@ -1,7 +1,16 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth";
 
-const PUBLIC = ["/login", "/api/auth/login", "/api/health", "/manifest.webmanifest", "/icon.svg"];
+// /sw.js MUST be public: the browser fetches the service worker without the
+// session cookie in some contexts, and a redirect to /login registers nothing.
+const PUBLIC = [
+  "/login",
+  "/api/auth/login",
+  "/api/health",
+  "/manifest.webmanifest",
+  "/icon.svg",
+  "/sw.js",
+];
 
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;

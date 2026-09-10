@@ -29,5 +29,15 @@ export async function PATCH(req: Request) {
     patch.voiceMode = body.voiceMode;
   }
 
+  if (typeof body.pushEnabled === "boolean") patch.pushEnabled = body.pushEnabled;
+  if (typeof body.briefHour === "number") patch.briefHour = Math.min(23, Math.max(0, body.briefHour));
+  if (typeof body.quietFrom === "number") patch.quietFrom = Math.min(23, Math.max(0, body.quietFrom));
+  if (typeof body.quietTo === "number") patch.quietTo = Math.min(23, Math.max(0, body.quietTo));
+  if (Array.isArray(body.mutedKinds)) patch.mutedKinds = body.mutedKinds.map(String).slice(0, 10);
+  if (typeof body.lat === "number" && typeof body.lon === "number") {
+    patch.lat = body.lat;
+    patch.lon = body.lon;
+  }
+
   return Response.json({ settings: await saveSettings(patch) });
 }

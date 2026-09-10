@@ -149,6 +149,13 @@ export const SearchIcon = (p: P) => (
   </svg>
 );
 
+export const BellIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M6.5 9.5a5.5 5.5 0 0 1 11 0c0 4 1.5 5.5 1.5 5.5H5s1.5-1.5 1.5-5.5z" />
+    <path d="M10.2 18.5a2 2 0 0 0 3.6 0" />
+  </svg>
+);
+
 export const AlertIcon = (p: P) => (
   <svg {...base} {...p}>
     <path d="M12 4.5 21 19.5H3z" />
