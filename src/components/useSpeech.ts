@@ -324,6 +324,17 @@ export function useSpeechOutput() {
       /* storage blocked */
     }
 
+    // Declare this as media playback rather than incidental sound. On iOS this
+    // maps to AVAudioSession .playback, which is what lets audio through when
+    // the physical silent switch is on. Experimental and Safari-only — feature
+    // detected, and harmless where it is missing.
+    try {
+      const nav = navigator as Navigator & { audioSession?: { type: string } };
+      if (nav.audioSession) nav.audioSession.type = "playback";
+    } catch {
+      /* not supported */
+    }
+
     const audio = new Audio();
     audio.preload = "auto";
     audio.onplay = () => setSpeaking(true);
@@ -361,6 +372,14 @@ export function useSpeechOutput() {
   const unlock = useCallback(() => {
     if (unlockedRef.current) return;
     unlockedRef.current = true;
+
+    // Re-assert on the gesture too — Safari can reset it between page states.
+    try {
+      const nav = navigator as Navigator & { audioSession?: { type: string } };
+      if (nav.audioSession) nav.audioSession.type = "playback";
+    } catch {
+      /* not supported */
+    }
 
     const audio = audioRef.current;
     if (audio) {
