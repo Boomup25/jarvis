@@ -1,0 +1,124 @@
+// JARVIS — personal assistant data model
+// Postgres on Railway. `npx prisma migrate dev` locally, `migrate deploy` in prod.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Single-row table describing the owner. id is always "me".
+model Profile {
+  id            String   @id @default("me")
+  displayName   String   @default("Sir")
+  assistantName String   @default("JARVIS")
+  timezone      String   @default("America/Chicago")
+  bio           String   @default("")
+  /// Structured facts: { heightCm, weightKg, birthday, goals[], equipment[],
+  /// dietary[], allergies[], schedule{}, units }
+  data          Json     @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+/// Durable freeform facts JARVIS has learned. Retrieved and injected each turn.
+model Memory {
+  id         String    @id @default(cuid())
+  content    String
+  /// identity | fitness | food | preference | schedule | goal | relationship | work | general
+  category   String    @default("general")
+  /// 1 = trivia, 5 = core identity. Drives retrieval ranking.
+  importance Int       @default(3)
+  source     String    @default("chat")
+  pinned     Boolean   @default(false)
+  active     Boolean   @default(true)
+  useCount   Int       @default(0)
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([active, importance])
+  @@index([category])
+}
+
+/// A generated, saved reference page: a workout, a recipe, a plan, a guide.
+/// This is the "don't regenerate, link to it" store.
+model Page {
+  id           String    @id @default(cuid())
+  slug         String    @unique
+  /// workout | recipe | plan | guide | note
+  type         String    @default("note")
+  title        String
+  summary      String    @default("")
+  contentMd    String
+  tags         String[]  @default([])
+  /// Type-specific structure: exercises[], ingredients[], macros{}, durationMin…
+  data         Json      @default("{}")
+  pinned       Boolean   @default(false)
+  archived     Boolean   @default(false)
+  viewCount    Int       @default(0)
+  lastViewedAt DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  logs LogEntry[]
+
+  @@index([type, archived])
+  @@index([archived, updatedAt])
+}
+
+model Conversation {
+  id        String    @id @default(cuid())
+  title     String    @default("New conversation")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  messages  Message[]
+
+  @@index([updatedAt])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  /// user | assistant | tool
+  role           String
+  content        String       @default("")
+  /// Raw tool_calls / tool results, kept for replay + debugging
+  toolCalls      Json?
+  model          String?
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+model Task {
+  id          String    @id @default(cuid())
+  title       String
+  notes       String    @default("")
+  done        Boolean   @default(false)
+  dueAt       DateTime?
+  pageSlug    String?
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  @@index([done, dueAt])
+}
+
+/// "I actually did this" tracking — workouts completed, meals eaten, weigh-ins.
+model LogEntry {
+  id         String   @id @default(cuid())
+  /// workout | meal | weight | note
+  kind       String
+  pageSlug   String?
+  page       Page?    @relation(fields: [pageSlug], references: [slug], onDelete: SetNull)
+  note       String   @default("")
+  value      Json     @default("{}")
+  occurredAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  @@index([kind, occurredAt])
+}

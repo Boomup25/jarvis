@@ -1,0 +1,165 @@
+@import "tailwindcss";
+
+/* Visual Studio keeps .vsidx index files in .vs/ locked while it runs, which
+   makes Tailwind's source scanner panic Turbopack. Nothing in there is ours. */
+@source not "../../.vs";
+@source not "../../.next";
+@source not "../../node_modules";
+
+/* ---------------------------------------------------------------
+   JARVIS palette — arc-reactor cyan on deep navy, gold for warmth.
+   --------------------------------------------------------------- */
+@theme {
+  --color-void: #05080f;
+  --color-abyss: #0a1120;
+  --color-panel: #0e1728;
+  --color-edge: #1b2942;
+  --color-mist: #8aa0c0;
+  --color-frost: #dce8f8;
+  --color-arc: #4fd8ff;
+  --color-arc-dim: #1d7f9e;
+  --color-gold: #ffc75a;
+  --color-violet: #a78bfa;
+  --color-jade: #4ade80;
+  --color-ember: #fb7185;
+
+  /* Sequential ramp for the activity heatmap. One hue, monotone lightness,
+     validated against the panel surface (#0e1728): light end 2.52:1, adjacent
+     lightness gaps all clear, hue spread 16deg. Do not hand-tweak these. */
+  --color-viz-1: #215e7c;
+  --color-viz-2: #2e88aa;
+  --color-viz-3: #3fb3d8;
+  --color-viz-4: #66dfff;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, monospace;
+}
+
+:root {
+  --accent-cyan: var(--color-arc);
+  --accent-amber: var(--color-gold);
+  --accent-violet: var(--color-violet);
+  --accent-green: var(--color-jade);
+  --accent-slate: var(--color-mist);
+  color-scheme: dark;
+}
+
+html,
+body {
+  background: var(--color-void);
+  color: var(--color-frost);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: none;
+}
+
+body {
+  min-height: 100dvh;
+  /* Faint reactor glow behind everything */
+  background-image:
+    radial-gradient(ellipse 90% 55% at 50% -10%, rgba(79, 216, 255, 0.13), transparent 70%),
+    radial-gradient(ellipse 70% 45% at 85% 105%, rgba(167, 139, 250, 0.08), transparent 70%);
+  background-attachment: fixed;
+}
+
+/* Respect the iPhone notch / home indicator */
+.safe-top { padding-top: env(safe-area-inset-top); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+
+@utility glass {
+  background: color-mix(in srgb, var(--color-panel) 78%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-edge) 90%, transparent);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+}
+
+@utility arc-glow {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-arc) 30%, transparent),
+    0 0 28px -6px color-mix(in srgb, var(--color-arc) 45%, transparent);
+}
+
+/* Scrollbars: present but quiet */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-edge) 90%, transparent);
+  border-radius: 999px;
+}
+
+/* Typing caret that blinks while a reply streams in */
+@keyframes caret { 0%, 45% { opacity: 1 } 50%, 100% { opacity: 0 } }
+.caret::after {
+  content: "";
+  display: inline-block;
+  width: 0.5ch;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  background: var(--color-arc);
+  animation: caret 1s steps(1) infinite;
+}
+
+@keyframes pulse-ring {
+  0% { transform: scale(0.92); opacity: 0.85 }
+  70% { transform: scale(1.25); opacity: 0 }
+  100% { transform: scale(1.25); opacity: 0 }
+}
+.listening::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 2px solid var(--color-arc);
+  animation: pulse-ring 1.4s ease-out infinite;
+}
+
+@keyframes rise { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
+.rise { animation: rise 0.28s ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+/* Markdown page body */
+.prose-jarvis { line-height: 1.7; }
+.prose-jarvis h2 {
+  margin: 1.6rem 0 0.6rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-arc);
+}
+.prose-jarvis h3 { margin: 1.1rem 0 0.4rem; font-size: 1rem; font-weight: 600; color: var(--color-frost); }
+.prose-jarvis p { margin: 0.6rem 0; color: color-mix(in srgb, var(--color-frost) 88%, transparent); }
+.prose-jarvis ul, .prose-jarvis ol { margin: 0.6rem 0; padding-left: 1.15rem; }
+.prose-jarvis li { margin: 0.3rem 0; }
+.prose-jarvis ul { list-style: disc; }
+.prose-jarvis ol { list-style: decimal; }
+.prose-jarvis strong { color: var(--color-gold); font-weight: 600; }
+.prose-jarvis code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  padding: 0.12em 0.38em;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--color-edge) 70%, transparent);
+}
+.prose-jarvis a { color: var(--color-arc); text-decoration: underline; text-underline-offset: 3px; }
+.prose-jarvis blockquote {
+  border-left: 2px solid var(--color-arc-dim);
+  padding-left: 0.9rem;
+  margin: 0.8rem 0;
+  color: var(--color-mist);
+}
+.prose-jarvis table { width: 100%; border-collapse: collapse; margin: 0.9rem 0; font-size: 0.9rem; }
+.prose-jarvis th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--color-mist);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--color-edge);
+}
+.prose-jarvis td { padding: 0.5rem 0.6rem; border-bottom: 1px solid color-mix(in srgb, var(--color-edge) 55%, transparent); }

@@ -1,0 +1,10 @@
+# Normalize to LF in the repo; Git still checks out CRLF on Windows.
+# Keeps diffs clean when the same repo is built on Linux (Railway).
+* text=auto eol=lf
+
+# Binary — never touch these
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff binary
+*.woff2 binary
