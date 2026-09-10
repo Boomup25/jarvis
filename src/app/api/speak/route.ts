@@ -19,8 +19,7 @@ export async function POST(req: Request) {
   try {
     const upstream = await synthesize({
       text,
-      voice: body.voice || settings.voiceId,
-      instructions: settings.voiceInstructions,
+      voiceId: body.voiceId || settings.voiceId,
     });
 
     return new Response(upstream.body, {

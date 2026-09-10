@@ -1,6 +1,6 @@
 import { guard } from "@/lib/session";
 import { getSettings, saveSettings, type Settings } from "@/lib/settings";
-import { TTS_VOICES, DEFAULT_VOICE, DEFAULT_INSTRUCTIONS } from "@/lib/tts";
+import { VOICE_CATALOGUE, DEFAULT_VOICE_ID } from "@/lib/tts";
 
 export const dynamic = "force-dynamic";
 
@@ -10,8 +10,8 @@ export async function GET() {
   const settings = await getSettings();
   return Response.json({
     settings,
-    voices: TTS_VOICES,
-    defaults: { voiceId: DEFAULT_VOICE, voiceInstructions: DEFAULT_INSTRUCTIONS },
+    voices: VOICE_CATALOGUE,
+    defaults: { voiceId: DEFAULT_VOICE_ID },
     ttsConfigured: Boolean(process.env.OPENROUTER_API_KEY),
   });
 }

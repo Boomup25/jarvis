@@ -33,8 +33,11 @@ interface CatalogueResponse {
 
 interface Voice {
   id: string;
+  model: string;
+  voice: string;
   label: string;
   note: string;
+  group: string;
 }
 
 export function SettingsSheet({
@@ -51,9 +54,7 @@ export function SettingsSheet({
   onVoiceModeChange: (mode: VoiceMode) => void;
 }) {
   const [voices, setVoices] = useState<Voice[]>([]);
-  const [voiceId, setVoiceId] = useState<string>("onyx");
-  const [instructions, setInstructions] = useState("");
-  const [defaultInstructions, setDefaultInstructions] = useState("");
+  const [voiceId, setVoiceId] = useState<string>("");
   const [savingVoice, setSavingVoice] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [data, setData] = useState<CatalogueResponse | null>(null);
@@ -70,9 +71,7 @@ export function SettingsSheet({
       .then((json) => {
         if (!json) return;
         setVoices(json.voices ?? []);
-        setVoiceId(json.settings?.voiceId ?? json.defaults?.voiceId ?? "onyx");
-        setInstructions(json.settings?.voiceInstructions ?? "");
-        setDefaultInstructions(json.defaults?.voiceInstructions ?? "");
+        setVoiceId(json.settings?.voiceId ?? json.defaults?.voiceId ?? "");
       })
       .catch(() => {});
   }, [open, voices.length]);
@@ -145,13 +144,13 @@ export function SettingsSheet({
   async function preview() {
     setPreviewing(true);
     try {
-      await saveVoice({ voiceId, voiceInstructions: instructions });
+      await saveVoice({ voiceId });
       const res = await fetch("/api/speak", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text: "Good evening. Everything is in order, and your schedule is clear.",
-          voice: voiceId,
+          voiceId,
         }),
       });
       if (!res.ok) throw new Error("preview failed");
@@ -216,27 +215,23 @@ export function SettingsSheet({
                     }}
                     className="mt-1 w-full rounded-lg border border-edge bg-abyss/70 px-2.5 py-2 text-[0.8rem] focus:border-arc/50 focus:outline-none"
                   >
-                    {voices.map((v) => (
-                      <option key={v.id} value={v.id}>
-                        {v.label} — {v.note}
-                      </option>
-                    ))}
+                    {["Recommended", "British", "Free", "American"].map((group) => {
+                      const inGroup = voices.filter((v) => v.group === group);
+                      if (!inGroup.length) return null;
+                      return (
+                        <optgroup key={group} label={group}>
+                          {inGroup.map((v) => (
+                            <option key={v.id} value={v.id}>
+                              {v.label}
+                            </option>
+                          ))}
+                        </optgroup>
+                      );
+                    })}
                   </select>
-                </label>
-
-                <label className="block">
-                  <span className="text-[0.7rem] text-mist">How it should sound</span>
-                  <textarea
-                    value={instructions}
-                    onChange={(e) => setInstructions(e.target.value)}
-                    onBlur={() => void saveVoice({ voiceInstructions: instructions })}
-                    rows={3}
-                    placeholder={defaultInstructions}
-                    className="mt-1 w-full resize-none rounded-lg border border-edge bg-abyss/70 px-2.5 py-2 text-[0.75rem] leading-snug placeholder:text-mist/50 focus:border-arc/50 focus:outline-none"
-                  />
                   <span className="mt-1 block text-[0.65rem] leading-snug text-mist">
-                    Plain English. The model performs this, so describe delivery — pace,
-                    restraint, inflection. Blank uses the default.
+                    {voices.find((v) => v.id === voiceId)?.note ??
+                      "British voices carry the character best."}
                   </span>
                 </label>
 

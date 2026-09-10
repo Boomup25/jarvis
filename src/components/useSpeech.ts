@@ -485,7 +485,10 @@ export function useSpeechOutput() {
           signal: controller.signal,
         });
 
-        if (!res.ok) throw new Error(`speak failed: ${res.status}`);
+        if (!res.ok) {
+          const detail = await res.json().catch(() => null);
+          throw new Error(detail?.error || `speak failed (${res.status})`);
+        }
 
         const blob = await res.blob();
         if (controller.signal.aborted) return;
@@ -498,7 +501,10 @@ export function useSpeechOutput() {
         if ((err as Error).name === "AbortError") return;
         setSpeaking(false);
         // Never go silent because the API had a bad day.
-        setError("Natural voice unavailable — using the device voice.");
+        // Show what actually went wrong. A generic message here cost hours.
+        setError(
+          `Natural voice unavailable — ${(err as Error).message.slice(0, 200)}. Using the device voice.`
+        );
         speakDevice(text);
       }
     },

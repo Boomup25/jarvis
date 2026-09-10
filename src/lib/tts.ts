@@ -3,42 +3,136 @@
  *
  * Reuses OPENROUTER_API_KEY — no second provider account. The key never
  * reaches the browser; /api/speak proxies and streams the audio back.
+ *
+ * Note for future me: OpenRouter carries NO OpenAI TTS models, whatever the
+ * guide's example says. Every id below was read off
+ * /api/v1/models?output_modalities=speech. Check there before adding one.
  */
 
 const BASE = "https://openrouter.ai/api/v1";
 
-/** Voices available on gpt-4o-mini-tts. */
-export const TTS_VOICES = [
-  { id: "onyx", label: "Onyx", note: "Deep, level — the closest to a butler" },
-  { id: "ballad", label: "Ballad", note: "Measured and warm" },
-  { id: "ash", label: "Ash", note: "Dry, understated" },
-  { id: "sage", label: "Sage", note: "Calm, considered" },
-  { id: "echo", label: "Echo", note: "Neutral, clipped" },
-  { id: "fable", label: "Fable", note: "Expressive, storyteller" },
-  { id: "verse", label: "Verse", note: "Light, conversational" },
-  { id: "alloy", label: "Alloy", note: "Plain and even" },
-  { id: "cedar", label: "Cedar", note: "Soft-spoken" },
-  { id: "marin", label: "Marin", note: "Bright" },
-  { id: "coral", label: "Coral", note: "Brisk" },
-  { id: "nova", label: "Nova", note: "Higher, energetic" },
-  { id: "shimmer", label: "Shimmer", note: "Airy" },
-] as const;
-
-export const DEFAULT_VOICE = "onyx";
+export interface VoiceOption {
+  /** Stable id used in settings: "<model>::<voice>". */
+  id: string;
+  model: string;
+  voice: string;
+  label: string;
+  note: string;
+  group: "Recommended" | "British" | "Free" | "American";
+}
 
 /**
- * This is where the character actually lives. gpt-4o-mini-tts performs a
- * described delivery rather than just applying an accent, so the wording here
- * matters more than the voice choice does.
+ * Curated, not exhaustive. These models carry their character in the voice
+ * itself — there is no "describe the delivery" parameter available here, so
+ * voice choice is the whole lever.
  */
-export const DEFAULT_INSTRUCTIONS =
-  "Speak with a refined British accent, in the manner of a composed, highly capable butler. " +
-  "Unhurried and level. Understated confidence, never eager, never cheerful. " +
-  "Slight downward inflection at the end of sentences. Dry wit delivered flat, without emphasis. " +
-  "Treat everything as entirely under control.";
+export const VOICE_CATALOGUE: VoiceOption[] = [
+  {
+    id: "mistralai/voxtral-mini-tts-2603::gb_oliver_confident",
+    model: "mistralai/voxtral-mini-tts-2603",
+    voice: "gb_oliver_confident",
+    label: "Oliver — Confident",
+    note: "British male, self-assured and level. The closest thing to a butler.",
+    group: "Recommended",
+  },
+  {
+    id: "mistralai/voxtral-mini-tts-2603::gb_oliver_neutral",
+    model: "mistralai/voxtral-mini-tts-2603",
+    voice: "gb_oliver_neutral",
+    label: "Oliver — Neutral",
+    note: "British male, flatter and more matter-of-fact.",
+    group: "Recommended",
+  },
+  {
+    id: "mistralai/voxtral-mini-tts-2603::gb_oliver_curious",
+    model: "mistralai/voxtral-mini-tts-2603",
+    voice: "gb_oliver_curious",
+    label: "Oliver — Curious",
+    note: "British male with a touch more lift.",
+    group: "British",
+  },
+  {
+    id: "hexgrad/kokoro-82m::bm_george",
+    model: "hexgrad/kokoro-82m",
+    voice: "bm_george",
+    label: "George",
+    note: "British male, measured. Cheapest of the paid options.",
+    group: "British",
+  },
+  {
+    id: "hexgrad/kokoro-82m::bm_daniel",
+    model: "hexgrad/kokoro-82m",
+    voice: "bm_daniel",
+    label: "Daniel",
+    note: "British male, softer.",
+    group: "British",
+  },
+  {
+    id: "hexgrad/kokoro-82m::bm_lewis",
+    model: "hexgrad/kokoro-82m",
+    voice: "bm_lewis",
+    label: "Lewis",
+    note: "British male, deeper.",
+    group: "British",
+  },
+  {
+    id: "hexgrad/kokoro-82m::bm_fable",
+    model: "hexgrad/kokoro-82m",
+    voice: "bm_fable",
+    label: "Fable",
+    note: "British male, warmer.",
+    group: "British",
+  },
+  {
+    id: "deepgram/flux-tts:free::flux-colin-en",
+    model: "deepgram/flux-tts:free",
+    voice: "flux-colin-en",
+    label: "Colin",
+    note: "Free. Natural, mostly American.",
+    group: "Free",
+  },
+  {
+    id: "deepgram/flux-tts:free::flux-wes-en",
+    model: "deepgram/flux-tts:free",
+    voice: "flux-wes-en",
+    label: "Wes",
+    note: "Free. Lower and calmer.",
+    group: "Free",
+  },
+  {
+    id: "deepgram/flux-tts:free::flux-rufus-en",
+    model: "deepgram/flux-tts:free",
+    voice: "flux-rufus-en",
+    label: "Rufus",
+    note: "Free. Crisper.",
+    group: "Free",
+  },
+  {
+    id: "hexgrad/kokoro-82m::am_onyx",
+    model: "hexgrad/kokoro-82m",
+    voice: "am_onyx",
+    label: "Onyx",
+    note: "American male, deep.",
+    group: "American",
+  },
+  {
+    id: "hexgrad/kokoro-82m::am_michael",
+    model: "hexgrad/kokoro-82m",
+    voice: "am_michael",
+    label: "Michael",
+    note: "American male, even.",
+    group: "American",
+  },
+];
 
-export function ttsModel(): string {
-  return process.env.TTS_MODEL?.trim() || "openai/gpt-4o-mini-tts";
+export const DEFAULT_VOICE_ID = "mistralai/voxtral-mini-tts-2603::gb_oliver_confident";
+
+export function resolveVoice(id?: string | null): VoiceOption {
+  const wanted = id || process.env.TTS_VOICE_ID || DEFAULT_VOICE_ID;
+  return (
+    VOICE_CATALOGUE.find((v) => v.id === wanted) ??
+    VOICE_CATALOGUE.find((v) => v.id === DEFAULT_VOICE_ID)!
+  );
 }
 
 function headers() {
@@ -52,32 +146,10 @@ function headers() {
   };
 }
 
-let discovered: { at: number; models: string[] } | null = null;
-
-/** Same self-healing trick as the chat chain — model ids get retired. */
-async function discoverTtsModels(): Promise<string[]> {
-  if (discovered && Date.now() - discovered.at < 30 * 60 * 1000) return discovered.models;
-  try {
-    const res = await fetch(`${BASE}/models?output_modalities=speech`, { headers: headers() });
-    if (!res.ok) return [];
-    const json = await res.json();
-    const models: string[] = (json.data ?? [])
-      .map((m: { id: string }) => m.id)
-      .filter(Boolean)
-      // Prefer OpenAI's, which is the one that honours `instructions`.
-      .sort((a: string, b: string) => Number(b.startsWith("openai/")) - Number(a.startsWith("openai/")));
-    discovered = { at: Date.now(), models };
-    return models;
-  } catch {
-    return [];
-  }
-}
-
 export interface SpeakOptions {
   text: string;
-  voice?: string;
-  instructions?: string;
-  speed?: number;
+  /** A VOICE_CATALOGUE id ("<model>::<voice>"). */
+  voiceId?: string;
 }
 
 /** Returns the upstream audio response so the route can stream it straight through. */
@@ -85,32 +157,29 @@ export async function synthesize(opts: SpeakOptions): Promise<Response> {
   const input = opts.text.trim().slice(0, 4000);
   if (!input) throw new Error("Nothing to speak");
 
-  const voice = TTS_VOICES.some((v) => v.id === opts.voice) ? opts.voice! : DEFAULT_VOICE;
-  const instructions = opts.instructions?.trim() || DEFAULT_INSTRUCTIONS;
+  const primary = resolveVoice(opts.voiceId);
+  // Fall back to the free model rather than going silent on a billing problem.
+  const chain = [primary, ...VOICE_CATALOGUE.filter((v) => v.group === "Free" && v.id !== primary.id).slice(0, 1)];
 
-  const attempt = async (model: string) =>
-    fetch(`${BASE}/audio/speech`, {
+  const errors: string[] = [];
+
+  for (const option of chain) {
+    const res = await fetch(`${BASE}/audio/speech`, {
       method: "POST",
       headers: headers(),
       body: JSON.stringify({
-        model,
+        model: option.model,
         input,
-        voice,
+        voice: option.voice,
         response_format: "mp3",
-        speed: opts.speed ?? 1.0,
-        provider: { options: { openai: { instructions } } },
       }),
     });
 
-  const primary = ttsModel();
-  let res = await attempt(primary);
-  if (res.ok) return res;
-
-  for (const model of (await discoverTtsModels()).filter((m) => m !== primary).slice(0, 3)) {
-    res = await attempt(model);
     if (res.ok) return res;
+
+    const detail = await res.text().catch(() => "");
+    errors.push(`${option.model} → ${res.status} ${detail.slice(0, 240)}`);
   }
 
-  const detail = await res.text().catch(() => "");
-  throw new Error(`TTS failed (${res.status}) ${detail.slice(0, 200)}`);
+  throw new Error(errors.join(" | "));
 }
