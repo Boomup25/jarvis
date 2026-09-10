@@ -18,18 +18,28 @@ export type OrbState = "idle" | "listening" | "thinking" | "speaking";
 export function ReactorOrb({
   state = "idle",
   level = 0,
+  activityAt = 0,
   className,
 }: {
   state?: OrbState;
   level?: number;
+  /**
+   * Timestamp of the last detected speech event. Used on mobile, where we
+   * can't open a second microphone stream for real amplitude — recognition
+   * events are a coarse but honest signal that you're talking, and reading a
+   * timestamp inside the animation loop keeps React out of the 60fps path.
+   */
+  activityAt?: number;
   className?: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef<OrbState>(state);
   const levelRef = useRef(level);
+  const activityRef = useRef(activityAt);
 
   stateRef.current = state;
   levelRef.current = level;
+  activityRef.current = activityAt;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -98,9 +108,20 @@ export function ReactorOrb({
       // synthetic envelope because the speech API exposes no amplitude.
       let target: number;
       switch (orbState) {
-        case "listening":
-          target = 0.25 + levelRef.current * 0.95;
+        case "listening": {
+          if (levelRef.current > 0.01) {
+            // Desktop: real microphone amplitude.
+            target = 0.25 + levelRef.current * 0.95;
+          } else {
+            // Mobile: decay from the last speech event, with a little texture
+            // so a steady voice doesn't look like a flat line.
+            const since = Date.now() - activityRef.current;
+            const recency = Math.max(0, 1 - since / 700);
+            const texture = (Math.sin(t * 9.3) * 0.5 + Math.sin(t * 14.7) * 0.3) * 0.12;
+            target = 0.22 + recency * (0.72 + texture);
+          }
           break;
+        }
         case "thinking":
           target = 0.42 + Math.sin(t * 5.5) * 0.12 + Math.sin(t * 8.3) * 0.06;
           break;

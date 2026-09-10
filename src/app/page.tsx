@@ -43,19 +43,20 @@ export default async function Dashboard() {
   const hasData = insights.totals.logs > 0 || insights.totals.pages > 0;
 
   return (
-    <main className="mx-auto max-w-lg px-4 pb-28 pt-6 safe-top">
+    <main className="h-full overflow-y-auto overscroll-contain px-4 pb-10 pt-6 safe-top">
+      <div className="mx-auto max-w-lg">
       {/* ---- hero ---------------------------------------------------- */}
       <section className="relative flex flex-col items-center pt-2">
         <div className="pointer-events-none absolute inset-x-0 -top-16 h-56 bg-[radial-gradient(ellipse_60%_60%_at_50%_50%,rgba(79,216,255,0.16),transparent_70%)]" />
 
         <ReactorOrb state="idle" className="relative size-40" />
 
-        <p className="mt-1 text-[0.62rem] uppercase tracking-[0.28em] text-mist">{dateLabel}</p>
+        <p className="readout mt-1">{dateLabel}</p>
         <h1 className="mt-1 text-center text-xl font-semibold">
           Good {partOfDay}, {profile.displayName}.
         </h1>
 
-        <div className="mt-4 w-full rounded-2xl glass p-4">
+        <div className="mt-4 w-full glass p-4">
           <Greeting
             fallback={
               hasData
@@ -67,7 +68,7 @@ export default async function Dashboard() {
 
         <Link
           href="/chat"
-          className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-arc py-3.5 text-sm font-semibold text-void arc-glow"
+          className="notch-tr mt-3 flex w-full items-center justify-center gap-2 border border-arc/60 bg-arc/[0.12] py-3.5 text-[0.8rem] font-semibold uppercase tracking-[0.2em] text-arc transition-colors hover:bg-arc/20"
         >
           Talk to JARVIS
         </Link>
@@ -103,13 +104,13 @@ export default async function Dashboard() {
 
       {/* ---- charts ------------------------------------------------------ */}
       {insights.totals.logs > 0 ? (
-        <section className="mt-6 rounded-2xl glass p-4">
+        <section className="mt-6 glass p-4">
           <ActivityHeatmap cells={insights.heatmap} />
           <hr className="my-5 border-edge/60" />
           <WeekTrend series={insights.weeklySeries} />
         </section>
       ) : (
-        <section className="mt-6 rounded-2xl border border-dashed border-edge px-4 py-8 text-center">
+        <section className="mt-6 border border-dashed border-edge px-4 py-8 text-center">
           <p className="text-[0.85rem]">No activity tracked yet.</p>
           <p className="mt-1 text-[0.75rem] leading-snug text-mist">
             Open a workout page and hit <span className="text-frost">Mark workout complete</span>.
@@ -138,7 +139,7 @@ export default async function Dashboard() {
             {tasks.map((task) => (
               <li
                 key={task.id}
-                className="flex items-center gap-3 rounded-xl border border-edge bg-panel/50 px-3 py-2.5"
+                className="flex items-center gap-3 border border-edge bg-panel/50 px-3 py-2.5"
               >
                 <CheckIcon className="size-4 shrink-0 text-mist" aria-hidden />
                 <span className="flex-1 truncate text-[0.85rem]">{task.title}</span>
@@ -172,7 +173,7 @@ export default async function Dashboard() {
                 <li key={page.slug}>
                   <Link
                     href={`/pages/${page.slug}`}
-                    className="flex items-center gap-3 rounded-xl border border-edge bg-panel/50 px-3 py-2.5 transition-colors hover:border-arc/40"
+                    className="flex items-center gap-3 border border-edge bg-panel/50 px-3 py-2.5 transition-colors hover:border-arc/40"
                   >
                     <Icon className="size-4 shrink-0 text-arc" aria-hidden />
                     <span className="flex-1 truncate text-[0.85rem]">{page.title}</span>
@@ -195,7 +196,7 @@ export default async function Dashboard() {
               <li key={page.slug}>
                 <Link
                   href={`/pages/${page.slug}`}
-                  className="flex items-center gap-3 rounded-xl border border-edge bg-panel/50 px-3 py-2.5 transition-colors hover:border-arc/40"
+                  className="flex items-center gap-3 border border-edge bg-panel/50 px-3 py-2.5 transition-colors hover:border-arc/40"
                 >
                   <span className="flex-1 truncate text-[0.85rem]">{page.title}</span>
                   <span className="shrink-0 font-mono text-[0.68rem] text-arc">
@@ -207,6 +208,7 @@ export default async function Dashboard() {
           </ul>
         </section>
       )}
+    </div>
     </main>
   );
 }

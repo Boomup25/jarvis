@@ -163,3 +163,89 @@ body {
   border-bottom: 1px solid var(--color-edge);
 }
 .prose-jarvis td { padding: 0.5rem 0.6rem; border-bottom: 1px solid color-mix(in srgb, var(--color-edge) 55%, transparent); }
+
+
+/* ---------------------------------------------------------------
+   HUD primitives. Corner ticks and cut corners instead of rounded
+   cards — the thing that reads as "instrument" rather than "app".
+   --------------------------------------------------------------- */
+
+@utility notch-tr {
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%);
+}
+
+@utility notch-tl {
+  clip-path: polygon(10px 0, 100% 0, 100% 100%, 0 100%, 0 10px);
+}
+
+/* Four corner ticks, drawn with borders on two pseudo-elements. */
+@utility brackets {
+  position: relative;
+}
+.brackets::before,
+.brackets::after {
+  content: "";
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border-color: color-mix(in srgb, var(--color-arc) 55%, transparent);
+  pointer-events: none;
+}
+.brackets::before {
+  top: 0;
+  left: 0;
+  border-top: 1px solid;
+  border-left: 1px solid;
+}
+.brackets::after {
+  bottom: 0;
+  right: 0;
+  border-bottom: 1px solid;
+  border-right: 1px solid;
+}
+
+/* Machine data. Prose stays in the sans face; telemetry goes here. */
+@utility readout {
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-mist) 85%, transparent);
+}
+
+/* A hairline that fades out — used to separate without boxing. */
+@utility rule-fade {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--color-arc) 40%, transparent),
+    color-mix(in srgb, var(--color-edge) 90%, transparent) 35%,
+    transparent
+  );
+}
+
+@keyframes sweep-x {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+/* Indicates work in progress. Motion only ever means state. */
+.scanning::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--color-arc) 22%, transparent),
+    transparent
+  );
+  width: 40%;
+  animation: sweep-x 1.8s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes blip {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 1; }
+}
+.live-dot { animation: blip 1.6s ease-in-out infinite; }

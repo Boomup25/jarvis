@@ -27,7 +27,8 @@ export default async function LibraryPage({
   const countFor = (t: string) => counts.find((c) => c.type === t)?._count ?? 0;
 
   return (
-    <main className="mx-auto max-w-lg px-4 pb-28 pt-8 safe-top">
+    <main className="h-full overflow-y-auto overscroll-contain px-4 pb-10 pt-8 safe-top">
+      <div className="mx-auto max-w-lg">
       <h1 className="text-xl font-semibold">Library</h1>
       <p className="mt-1 text-[0.8rem] text-mist">
         Everything JARVIS has written down for you.
@@ -83,6 +84,7 @@ export default async function LibraryPage({
           })}
         </ul>
       )}
+    </div>
     </main>
   );
 }

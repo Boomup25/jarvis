@@ -24,7 +24,8 @@ export default async function PageView({ params }: { params: Promise<{ slug: str
   const Icon = PAGE_ICONS[page.type as keyof typeof PAGE_ICONS] ?? PAGE_ICONS.note;
 
   return (
-    <main className="mx-auto max-w-lg px-4 pb-28 pt-6 safe-top">
+    <main className="h-full overflow-y-auto overscroll-contain px-4 pb-10 pt-6 safe-top">
+      <div className="mx-auto max-w-lg">
       <Link href="/pages" className="text-[0.75rem] text-mist transition-colors hover:text-frost">
         ← Library
       </Link>
@@ -59,6 +60,7 @@ export default async function PageView({ params }: { params: Promise<{ slug: str
       </article>
 
       <PageActions slug={page.slug} title={page.title} type={page.type} pinned={page.pinned} />
+    </div>
     </main>
   );
 }

@@ -65,7 +65,7 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <main className="flex min-h-[100dvh] items-center justify-center px-6">
+    <main className="flex h-full items-center justify-center px-6">
       <Suspense fallback={<ArcReactor className="size-20 text-arc" />}>
         <LoginForm />
       </Suspense>

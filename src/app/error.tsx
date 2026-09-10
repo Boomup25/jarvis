@@ -4,7 +4,7 @@ import { ArcReactor } from "@/components/Icons";
 
 export default function ErrorBoundary({ error, reset }: { error: Error; reset: () => void }) {
   return (
-    <main className="flex min-h-[100dvh] flex-col items-center justify-center gap-4 px-6 text-center">
+    <main className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
       <ArcReactor className="size-14 text-ember/70" />
       <p className="text-[0.95rem]">Something went wrong on my end.</p>
       <p className="max-w-sm text-[0.76rem] text-mist">{error.message}</p>

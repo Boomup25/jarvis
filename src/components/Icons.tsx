@@ -149,6 +149,21 @@ export const SearchIcon = (p: P) => (
   </svg>
 );
 
+export const HistoryIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1" />
+    <path d="M3.5 4.5V9H8" />
+    <path d="M12 7.8V12l3 1.8" />
+  </svg>
+);
+
+export const CameraIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M3.5 8.5h3l1.5-2.5h8L17.5 8.5h3v11h-17z" />
+    <circle cx="12" cy="13.5" r="3.5" />
+  </svg>
+);
+
 export const BellIcon = (p: P) => (
   <svg {...base} {...p}>
     <path d="M6.5 9.5a5.5 5.5 0 0 1 11 0c0 4 1.5 5.5 1.5 5.5H5s1.5-1.5 1.5-5.5z" />

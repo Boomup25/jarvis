@@ -119,7 +119,8 @@ export function MemoryManager({
   }
 
   return (
-    <main className="mx-auto max-w-lg px-4 pb-28 pt-8 safe-top">
+    <main className="h-full overflow-y-auto overscroll-contain px-4 pb-10 pt-8 safe-top">
+      <div className="mx-auto max-w-lg">
       <div className="flex items-center gap-3">
         <BrainIcon className="size-6 text-violet" />
         <div>
@@ -247,6 +248,7 @@ export function MemoryManager({
           ))}
         </div>
       )}
+    </div>
     </main>
   );
 }

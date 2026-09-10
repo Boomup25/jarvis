@@ -96,6 +96,8 @@ export function useSpeechInput(onFinal: (text: string) => void) {
   const [interim, setInterim] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [silenceMs, setSilenceMsState] = useState(DEFAULT_SILENCE_MS);
+  /** Last time speech was detected. Drives the orb where no mic analyser exists. */
+  const [activityAt, setActivityAt] = useState(0);
 
   const recRef = useRef<SpeechRecognitionLike | null>(null);
   const transcriptRef = useRef("");
@@ -207,8 +209,12 @@ export function useSpeechInput(onFinal: (text: string) => void) {
           if (result.isFinal) transcriptRef.current += result[0].transcript;
           else live += result[0].transcript;
         }
-        lastSoundRef.current = Date.now();
+        const now = Date.now();
+        lastSoundRef.current = now;
         setInterim(live);
+        // Throttled: recognition can fire many times a second and each one is
+        // a React render.
+        setActivityAt((prev) => (now - prev > 90 ? now : prev));
       };
 
       rec.onerror = (event: any) => {
@@ -269,6 +275,7 @@ export function useSpeechInput(onFinal: (text: string) => void) {
     supported,
     listening,
     interim,
+    activityAt,
     error,
     clearError: () => setError(null),
     start,
