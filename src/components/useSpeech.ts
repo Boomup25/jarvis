@@ -280,56 +280,121 @@ export function useSpeechInput(onFinal: (text: string) => void) {
 }
 
 const VOICE_PREF_KEY = "jarvis:voice";
+const VOICE_MODE_KEY = "jarvis:voiceMode";
 
+/** 0.05s of silence. Playing this inside a tap is what unlocks audio on iOS. */
+const SILENT_WAV = "data:audio/wav;base64,UklGRrQBAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YZABAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA";
+
+export type VoiceMode = "natural" | "device";
+
+/**
+ * Spoken replies.
+ *
+ * Two paths. "natural" hits /api/speak, which proxies OpenRouter's TTS and
+ * streams mp3 back — the key stays server-side. "device" uses the browser's
+ * own speechSynthesis, which is free but sounds like a phone.
+ *
+ * Both need unlocking from a real user gesture on iOS: an <audio> element must
+ * have played once before it can be re-sourced programmatically, and
+ * speechSynthesis refuses entirely until its first gesture-triggered utterance.
+ * That is why nothing was ever spoken on iPhone before.
+ */
 export function useSpeechOutput() {
   const [enabled, setEnabled] = useState(false);
+  const [mode, setModeState] = useState<VoiceMode>("natural");
   const [supported, setSupported] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const voiceRef = useRef<SpeechSynthesisVoice | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const urlRef = useRef<string | null>(null);
   const unlockedRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    if (typeof window === "undefined") return;
     setSupported(true);
+
     try {
       setEnabled(localStorage.getItem(VOICE_PREF_KEY) === "on");
+      const saved = localStorage.getItem(VOICE_MODE_KEY);
+      if (saved === "device" || saved === "natural") setModeState(saved);
     } catch {
-      /* storage blocked — default off */
+      /* storage blocked */
     }
 
-    const pick = () => {
-      const voices = speechSynthesis.getVoices();
-      if (!voices.length) return;
-      // A calm British male voice is as close to the source material as the
-      // browser gets for free.
-      voiceRef.current =
-        voices.find((v) => /en-GB/i.test(v.lang) && /(daniel|male|arthur|george)/i.test(v.name)) ??
-        voices.find((v) => /en-GB/i.test(v.lang)) ??
-        voices.find((v) => /en-US/i.test(v.lang)) ??
-        voices[0];
-    };
-    pick();
-    speechSynthesis.onvoiceschanged = pick;
+    const audio = new Audio();
+    audio.preload = "auto";
+    audio.onplay = () => setSpeaking(true);
+    audio.onended = () => setSpeaking(false);
+    audio.onpause = () => setSpeaking(false);
+    audio.onerror = () => setSpeaking(false);
+    audioRef.current = audio;
+
+    if ("speechSynthesis" in window) {
+      const pick = () => {
+        const voices = speechSynthesis.getVoices();
+        if (!voices.length) return;
+        voiceRef.current =
+          voices.find((v) => /en-GB/i.test(v.lang) && /(daniel|arthur|george|oliver)/i.test(v.name)) ??
+          voices.find((v) => /en-GB/i.test(v.lang)) ??
+          voices.find((v) => /en-US/i.test(v.lang)) ??
+          voices[0];
+      };
+      pick();
+      speechSynthesis.onvoiceschanged = pick;
+    }
+
     return () => {
-      speechSynthesis.onvoiceschanged = null;
-      speechSynthesis.cancel();
+      if ("speechSynthesis" in window) {
+        speechSynthesis.onvoiceschanged = null;
+        speechSynthesis.cancel();
+      }
+      abortRef.current?.abort();
+      audio.pause();
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
     };
   }, []);
 
-  /**
-   * iOS refuses to speak unless the FIRST utterance came from a user gesture.
-   * Replies arrive from a network stream, which is not a gesture — so nothing
-   * was ever spoken on iPhone. Speaking one silent utterance during a real tap
-   * unlocks the queue for the rest of the session.
-   */
+  /** MUST be called synchronously inside a click/tap. */
   const unlock = useCallback(() => {
     if (unlockedRef.current) return;
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    unlockedRef.current = true;
+
+    const audio = audioRef.current;
+    if (audio) {
+      try {
+        audio.src = SILENT_WAV;
+        void audio.play().catch(() => {});
+      } catch {
+        /* ignore */
+      }
+    }
+
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      try {
+        const silent = new SpeechSynthesisUtterance(" ");
+        silent.volume = 0;
+        speechSynthesis.speak(silent);
+      } catch {
+        /* ignore */
+      }
+    }
+  }, []);
+
+  const shutUp = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    if (typeof window !== "undefined" && "speechSynthesis" in window) speechSynthesis.cancel();
+    audioRef.current?.pause();
+    setSpeaking(false);
+  }, []);
+
+  const setMode = useCallback((next: VoiceMode) => {
+    setModeState(next);
     try {
-      const silent = new SpeechSynthesisUtterance(" ");
-      silent.volume = 0;
-      speechSynthesis.speak(silent);
-      unlockedRef.current = true;
+      localStorage.setItem(VOICE_MODE_KEY, next);
     } catch {
       /* ignore */
     }
@@ -343,41 +408,83 @@ export function useSpeechOutput() {
       } catch {
         /* ignore */
       }
-      if (next) unlock(); // this runs inside the tap, which is the point
-      else if (typeof window !== "undefined") speechSynthesis.cancel();
+      if (next) unlock(); // runs inside the tap, which is the whole point
+      else shutUp();
       return next;
     });
-  }, [unlock]);
+  }, [unlock, shutUp]);
 
-  const speak = useCallback(
-    (text: string) => {
-      if (!enabled || typeof window === "undefined" || !("speechSynthesis" in window)) return;
-      const clean = text
-        .replace(/```[\s\S]*?```/g, " code block ")
-        .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-        .replace(/[#*_`|>-]/g, " ")
-        .replace(/\s+/g, " ")
-        .trim()
-        .slice(0, 900);
-      if (!clean) return;
+  /** Strip markdown so it isn't read out as punctuation soup. */
+  const clean = (text: string) =>
+    text
+      .replace(/```[\s\S]*?```/g, " code block ")
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+      .replace(/[#*_`|>]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 900);
 
-      speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(clean);
-      if (voiceRef.current) utterance.voice = voiceRef.current;
-      utterance.rate = 1.02;
-      utterance.pitch = 0.92;
-      utterance.onstart = () => setSpeaking(true);
-      utterance.onend = () => setSpeaking(false);
-      utterance.onerror = () => setSpeaking(false);
-      speechSynthesis.speak(utterance);
-    },
-    [enabled]
-  );
-
-  const shutUp = useCallback(() => {
-    if (typeof window !== "undefined" && "speechSynthesis" in window) speechSynthesis.cancel();
-    setSpeaking(false);
+  const speakDevice = useCallback((text: string) => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    if (voiceRef.current) utterance.voice = voiceRef.current;
+    utterance.rate = 1.02;
+    utterance.pitch = 0.92;
+    utterance.onstart = () => setSpeaking(true);
+    utterance.onend = () => setSpeaking(false);
+    utterance.onerror = () => setSpeaking(false);
+    speechSynthesis.speak(utterance);
   }, []);
 
-  return { enabled, supported, speaking, toggle, speak, shutUp, unlock };
+  const speak = useCallback(
+    async (raw: string) => {
+      if (!enabled) return;
+      const text = clean(raw);
+      if (!text) return;
+
+      setError(null);
+
+      if (mode === "device") {
+        speakDevice(text);
+        return;
+      }
+
+      const audio = audioRef.current;
+      if (!audio) return speakDevice(text);
+
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      try {
+        setSpeaking(true);
+        const res = await fetch("/api/speak", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+          signal: controller.signal,
+        });
+
+        if (!res.ok) throw new Error(`speak failed: ${res.status}`);
+
+        const blob = await res.blob();
+        if (controller.signal.aborted) return;
+
+        if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+        urlRef.current = URL.createObjectURL(blob);
+        audio.src = urlRef.current;
+        await audio.play();
+      } catch (err) {
+        if ((err as Error).name === "AbortError") return;
+        setSpeaking(false);
+        // Never go silent because the API had a bad day.
+        setError("Natural voice unavailable — using the device voice.");
+        speakDevice(text);
+      }
+    },
+    [enabled, mode, speakDevice]
+  );
+
+  return { enabled, mode, setMode, supported, speaking, error, toggle, speak, shutUp, unlock };
 }

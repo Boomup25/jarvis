@@ -8,6 +8,12 @@ import { prisma, getProfile, PROFILE_ID } from "./db";
 export interface Settings {
   /** OpenRouter model id the user picked in the UI. Empty = use the default chain. */
   model?: string;
+  /** "natural" = the TTS API, "device" = the browser voice, "off" = silent. */
+  voiceMode?: "natural" | "device" | "off";
+  /** Voice id for the TTS API. */
+  voiceId?: string;
+  /** Overrides the delivery description in src/lib/tts.ts. */
+  voiceInstructions?: string;
 }
 
 export async function getSettings(): Promise<Settings> {
@@ -15,6 +21,15 @@ export async function getSettings(): Promise<Settings> {
   const data = (profile.data ?? {}) as Record<string, unknown>;
   return {
     model: typeof data.model === "string" && data.model ? data.model : undefined,
+    voiceMode:
+      data.voiceMode === "natural" || data.voiceMode === "device" || data.voiceMode === "off"
+        ? data.voiceMode
+        : undefined,
+    voiceId: typeof data.voiceId === "string" && data.voiceId ? data.voiceId : undefined,
+    voiceInstructions:
+      typeof data.voiceInstructions === "string" && data.voiceInstructions
+        ? data.voiceInstructions
+        : undefined,
   };
 }
 

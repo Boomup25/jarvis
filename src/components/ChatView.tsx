@@ -202,7 +202,7 @@ export function ChatView({
           const last = prev.find((m) => m.id === assistantId);
           if (last?.content && last.content !== spokenRef.current) {
             spokenRef.current = last.content;
-            voice.speak(last.content);
+            void voice.speak(last.content);
           }
           return prev;
         });
@@ -350,6 +350,12 @@ export function ChatView({
           </div>
         )}
 
+        {voice.error && (
+          <p className="mt-4 rounded-lg border border-edge px-3 py-2 text-[0.75rem] text-mist">
+            {voice.error}
+          </p>
+        )}
+
         {mic.error && (
           <p className="mt-4 rounded-lg border border-gold/35 bg-gold/10 px-3 py-2 text-[0.8rem] leading-snug text-gold">
             {mic.error}
@@ -474,6 +480,8 @@ export function ChatView({
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         onModelChange={setSelectedModel}
+        voiceMode={voice.mode}
+        onVoiceModeChange={voice.setMode}
       />
     </div>
   );

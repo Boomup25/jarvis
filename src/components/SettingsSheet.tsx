@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CheckIcon, SearchIcon, MicIcon } from "./Icons";
-import { DEFAULT_SILENCE_MS, readSilenceMs, writeSilenceMs } from "./useSpeech";
+import { DEFAULT_SILENCE_MS, readSilenceMs, writeSilenceMs, type VoiceMode } from "./useSpeech";
 
 interface PickerModel {
   id: string;
@@ -31,21 +31,51 @@ interface CatalogueResponse {
   error?: string;
 }
 
+interface Voice {
+  id: string;
+  label: string;
+  note: string;
+}
+
 export function SettingsSheet({
   open,
   onClose,
   onModelChange,
+  voiceMode,
+  onVoiceModeChange,
 }: {
   open: boolean;
   onClose: () => void;
   onModelChange: (id: string | null) => void;
+  voiceMode: VoiceMode;
+  onVoiceModeChange: (mode: VoiceMode) => void;
 }) {
+  const [voices, setVoices] = useState<Voice[]>([]);
+  const [voiceId, setVoiceId] = useState<string>("onyx");
+  const [instructions, setInstructions] = useState("");
+  const [defaultInstructions, setDefaultInstructions] = useState("");
+  const [savingVoice, setSavingVoice] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
   const [data, setData] = useState<CatalogueResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
   const [saving, setSaving] = useState<string | null>(null);
   const [silence, setSilence] = useState(DEFAULT_SILENCE_MS);
   const searchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!open || voices.length) return;
+    fetch("/api/settings")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (!json) return;
+        setVoices(json.voices ?? []);
+        setVoiceId(json.settings?.voiceId ?? json.defaults?.voiceId ?? "onyx");
+        setInstructions(json.settings?.voiceInstructions ?? "");
+        setDefaultInstructions(json.defaults?.voiceInstructions ?? "");
+      })
+      .catch(() => {});
+  }, [open, voices.length]);
 
   useEffect(() => {
     if (!open) return;
@@ -99,6 +129,43 @@ export function SettingsSheet({
     }
   }
 
+  async function saveVoice(patch: Record<string, string>) {
+    setSavingVoice(true);
+    try {
+      await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+    } finally {
+      setSavingVoice(false);
+    }
+  }
+
+  async function preview() {
+    setPreviewing(true);
+    try {
+      await saveVoice({ voiceId, voiceInstructions: instructions });
+      const res = await fetch("/api/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: "Good evening. Everything is in order, and your schedule is clear.",
+          voice: voiceId,
+        }),
+      });
+      if (!res.ok) throw new Error("preview failed");
+      const url = URL.createObjectURL(await res.blob());
+      const audio = new Audio(url);
+      audio.onended = () => URL.revokeObjectURL(url);
+      await audio.play();
+    } catch {
+      /* the sheet stays usable; the chat surfaces real failures */
+    } finally {
+      setPreviewing(false);
+    }
+  }
+
   function updateSilence(ms: number) {
     setSilence(ms);
     writeSilenceMs(ms);
@@ -123,7 +190,67 @@ export function SettingsSheet({
               <MicIcon className="size-3.5" />
               Voice
             </div>
-            <label className="mt-2 block">
+            <div className="mt-2 flex gap-1.5">
+              {(["natural", "device"] as VoiceMode[]).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => onVoiceModeChange(m)}
+                  className={`flex-1 rounded-lg border px-2 py-2 text-[0.72rem] transition-colors ${
+                    voiceMode === m ? "border-arc/50 bg-arc/10 text-arc" : "border-edge text-mist"
+                  }`}
+                >
+                  {m === "natural" ? "Natural voice" : "Device voice"}
+                </button>
+              ))}
+            </div>
+
+            {voiceMode === "natural" && (
+              <div className="mt-2.5 space-y-2">
+                <label className="block">
+                  <span className="text-[0.7rem] text-mist">Voice</span>
+                  <select
+                    value={voiceId}
+                    onChange={(e) => {
+                      setVoiceId(e.target.value);
+                      void saveVoice({ voiceId: e.target.value });
+                    }}
+                    className="mt-1 w-full rounded-lg border border-edge bg-abyss/70 px-2.5 py-2 text-[0.8rem] focus:border-arc/50 focus:outline-none"
+                  >
+                    {voices.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.label} — {v.note}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block">
+                  <span className="text-[0.7rem] text-mist">How it should sound</span>
+                  <textarea
+                    value={instructions}
+                    onChange={(e) => setInstructions(e.target.value)}
+                    onBlur={() => void saveVoice({ voiceInstructions: instructions })}
+                    rows={3}
+                    placeholder={defaultInstructions}
+                    className="mt-1 w-full resize-none rounded-lg border border-edge bg-abyss/70 px-2.5 py-2 text-[0.75rem] leading-snug placeholder:text-mist/50 focus:border-arc/50 focus:outline-none"
+                  />
+                  <span className="mt-1 block text-[0.65rem] leading-snug text-mist">
+                    Plain English. The model performs this, so describe delivery — pace,
+                    restraint, inflection. Blank uses the default.
+                  </span>
+                </label>
+
+                <button
+                  onClick={preview}
+                  disabled={previewing || savingVoice}
+                  className="w-full rounded-lg border border-edge py-2 text-[0.75rem] text-mist transition-colors hover:text-frost disabled:opacity-50"
+                >
+                  {previewing ? "Speaking…" : "Preview"}
+                </button>
+              </div>
+            )}
+
+            <label className="mt-3 block">
               <div className="flex items-baseline justify-between">
                 <span className="text-[0.8rem]">Pause before sending</span>
                 <span className="font-mono text-[0.78rem] text-arc">{(silence / 1000).toFixed(1)}s</span>
