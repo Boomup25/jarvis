@@ -11,6 +11,17 @@ next-env.d.ts
 .env
 .env*.local
 
+# keys and certificates — never, under any circumstances
+*.pem
+*.key
+*.ppk
+id_rsa*
+id_ed25519*
+id_ecdsa*
+*_rsa
+*_ed25519
+.ssh/
+
 # personal scratch notes (these tend to collect connection strings)
 Jarvis docs.txt
 notes.txt
