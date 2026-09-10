@@ -103,6 +103,10 @@ export function ChatView({
       const trimmed = text.trim();
       if (!trimmed || busy) return;
 
+      // Runs inside the tap/Enter that triggered this, which is the only
+      // moment iOS will let us prime speech synthesis.
+      voice.unlock();
+
       setError(null);
       setMatches([]);
       setInput("");
@@ -233,6 +237,8 @@ export function ChatView({
         : "idle";
 
   const startVoice = () => {
+    voice.unlock();
+    // Desktop only — the hook no-ops on mobile so we never contend for the mic.
     void micLevel.start();
     mic.start();
   };
@@ -344,6 +350,12 @@ export function ChatView({
           </div>
         )}
 
+        {mic.error && (
+          <p className="mt-4 rounded-lg border border-gold/35 bg-gold/10 px-3 py-2 text-[0.8rem] leading-snug text-gold">
+            {mic.error}
+          </p>
+        )}
+
         {error && (
           <p className="mt-4 rounded-lg border border-ember/35 bg-ember/10 px-3 py-2 text-[0.8rem] text-ember">
             {error}
@@ -433,9 +445,13 @@ export function ChatView({
             {mic.interim || <span className="text-mist">Listening…</span>}
           </p>
 
-          <p className="text-[0.7rem] text-mist">
-            Sends after {(mic.silenceMs / 1000).toFixed(1)}s of quiet
-          </p>
+          {mic.error ? (
+            <p className="max-w-xs text-center text-[0.78rem] leading-snug text-gold">{mic.error}</p>
+          ) : (
+            <p className="text-[0.7rem] text-mist">
+              Sends after {(mic.silenceMs / 1000).toFixed(1)}s of quiet
+            </p>
+          )}
 
           <div className="flex items-center gap-3">
             <button
