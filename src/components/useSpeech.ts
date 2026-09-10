@@ -287,17 +287,73 @@ const SILENT_WAV = "data:audio/wav;base64,UklGRrQBAABXQVZFZm10IBAAAAABAAEAQB8AAE
 
 export type VoiceMode = "natural" | "device";
 
+/** Total characters spoken per reply. Long pages are never read aloud. */
+const SPEAK_BUDGET = 900;
+/** Don't synthesise fragments shorter than this — the per-request overhead dominates. */
+const MIN_CHUNK = 70;
+/** The FIRST chunk gets a lower bar: starting to speak sooner matters more
+ *  than request efficiency, and openers ("Good evening, sir.") are short. */
+const MIN_FIRST_CHUNK = 12;
+/** Force a break here even mid-sentence, so one long run-on can't stall the audio. */
+const MAX_CHUNK = 240;
+
+/** Strip markdown so it isn't read out as punctuation soup. */
+function clean(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/g, " code block ")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/[#*_`|>]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Pull one speakable chunk off the front of the buffer, or null if the buffer
+ * doesn't yet hold a natural stopping point.
+ */
+function takeChunk(buffer: string, flush: boolean, minLen = MIN_CHUNK): [string | null, string] {
+  const trimmed = buffer.replace(/^\s+/, "");
+  if (!trimmed) return [null, ""];
+
+  if (flush) return [trimmed, ""];
+  if (trimmed.length < minLen) return [null, trimmed];
+
+  for (let i = minLen; i < trimmed.length && i <= MAX_CHUNK; i++) {
+    const c = trimmed[i];
+    if (c === "." || c === "!" || c === "?" || c === "\n") {
+      const next = trimmed[i + 1];
+      if (next === undefined || next === " " || next === "\n") {
+        return [trimmed.slice(0, i + 1).trim(), trimmed.slice(i + 1)];
+      }
+    }
+  }
+
+  if (trimmed.length > MAX_CHUNK) {
+    const space = trimmed.lastIndexOf(" ", MAX_CHUNK);
+    const at = space > minLen ? space : MAX_CHUNK;
+    return [trimmed.slice(0, at).trim(), trimmed.slice(at)];
+  }
+
+  return [null, trimmed];
+}
+
+interface QueueItem {
+  text: string;
+  /** Synthesis starts the moment the chunk is queued, not when it's its turn. */
+  audio: Promise<string | null>;
+}
+
 /**
  * Spoken replies.
  *
- * Two paths. "natural" hits /api/speak, which proxies OpenRouter's TTS and
- * streams mp3 back — the key stays server-side. "device" uses the browser's
- * own speechSynthesis, which is free but sounds like a phone.
+ * Streamed, not batched. Chunks are cut at sentence boundaries as the reply
+ * arrives, synthesis for chunk N+1 runs while chunk N is playing, and playback
+ * starts as soon as the FIRST sentence is ready — rather than after the whole
+ * reply has finished, been synthesised, and been downloaded.
  *
- * Both need unlocking from a real user gesture on iOS: an <audio> element must
- * have played once before it can be re-sourced programmatically, and
+ * Both paths need unlocking from a real user gesture on iOS: an <audio> element
+ * must have played once before it can be re-sourced programmatically, and
  * speechSynthesis refuses entirely until its first gesture-triggered utterance.
- * That is why nothing was ever spoken on iPhone before.
  */
 export function useSpeechOutput() {
   const [enabled, setEnabled] = useState(false);
@@ -308,9 +364,21 @@ export function useSpeechOutput() {
 
   const voiceRef = useRef<SpeechSynthesisVoice | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const urlRef = useRef<string | null>(null);
   const unlockedRef = useRef(false);
-  const abortRef = useRef<AbortController | null>(null);
+
+  const bufferRef = useRef("");
+  const consumedRef = useRef(0);
+  const spokenRef = useRef(0);
+  const queueRef = useRef<QueueItem[]>([]);
+  const playingRef = useRef(false);
+  const urlsRef = useRef<string[]>([]);
+  const controllersRef = useRef<AbortController[]>([]);
+  const genRef = useRef(0);
+
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -326,8 +394,7 @@ export function useSpeechOutput() {
 
     // Declare this as media playback rather than incidental sound. On iOS this
     // maps to AVAudioSession .playback, which is what lets audio through when
-    // the physical silent switch is on. Experimental and Safari-only — feature
-    // detected, and harmless where it is missing.
+    // the physical silent switch is on. Experimental and Safari-only.
     try {
       const nav = navigator as Navigator & { audioSession?: { type: string } };
       if (nav.audioSession) nav.audioSession.type = "playback";
@@ -337,10 +404,6 @@ export function useSpeechOutput() {
 
     const audio = new Audio();
     audio.preload = "auto";
-    audio.onplay = () => setSpeaking(true);
-    audio.onended = () => setSpeaking(false);
-    audio.onpause = () => setSpeaking(false);
-    audio.onerror = () => setSpeaking(false);
     audioRef.current = audio;
 
     if ("speechSynthesis" in window) {
@@ -362,9 +425,8 @@ export function useSpeechOutput() {
         speechSynthesis.onvoiceschanged = null;
         speechSynthesis.cancel();
       }
-      abortRef.current?.abort();
       audio.pause();
-      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+      urlsRef.current.forEach((u) => URL.revokeObjectURL(u));
     };
   }, []);
 
@@ -373,7 +435,6 @@ export function useSpeechOutput() {
     if (unlockedRef.current) return;
     unlockedRef.current = true;
 
-    // Re-assert on the gesture too — Safari can reset it between page states.
     try {
       const nav = navigator as Navigator & { audioSession?: { type: string } };
       if (nav.audioSession) nav.audioSession.type = "playback";
@@ -402,50 +463,32 @@ export function useSpeechOutput() {
     }
   }, []);
 
+  const reset = useCallback(() => {
+    genRef.current++;
+    controllersRef.current.forEach((c) => c.abort());
+    controllersRef.current = [];
+    queueRef.current = [];
+    playingRef.current = false;
+    bufferRef.current = "";
+    consumedRef.current = 0;
+    spokenRef.current = 0;
+    urlsRef.current.forEach((u) => URL.revokeObjectURL(u));
+    urlsRef.current = [];
+  }, []);
+
   const shutUp = useCallback(() => {
-    abortRef.current?.abort();
-    abortRef.current = null;
+    reset();
     if (typeof window !== "undefined" && "speechSynthesis" in window) speechSynthesis.cancel();
-    audioRef.current?.pause();
-    setSpeaking(false);
-  }, []);
-
-  const setMode = useCallback((next: VoiceMode) => {
-    setModeState(next);
-    try {
-      localStorage.setItem(VOICE_MODE_KEY, next);
-    } catch {
-      /* ignore */
+    const audio = audioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.onended = null;
     }
-  }, []);
-
-  const toggle = useCallback(() => {
-    setEnabled((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem(VOICE_PREF_KEY, next ? "on" : "off");
-      } catch {
-        /* ignore */
-      }
-      if (next) unlock(); // runs inside the tap, which is the whole point
-      else shutUp();
-      return next;
-    });
-  }, [unlock, shutUp]);
-
-  /** Strip markdown so it isn't read out as punctuation soup. */
-  const clean = (text: string) =>
-    text
-      .replace(/```[\s\S]*?```/g, " code block ")
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-      .replace(/[#*_`|>]/g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 900);
+    setSpeaking(false);
+  }, [reset]);
 
   const speakDevice = useCallback((text: string) => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     if (voiceRef.current) utterance.voice = voiceRef.current;
     utterance.rate = 1.02;
@@ -456,60 +499,177 @@ export function useSpeechOutput() {
     speechSynthesis.speak(utterance);
   }, []);
 
-  const speak = useCallback(
-    async (raw: string) => {
-      if (!enabled) return;
-      const text = clean(raw);
-      if (!text) return;
+  /** Fire synthesis immediately; the queue awaits the result when its turn comes. */
+  const synthesise = useCallback((text: string, gen: number): Promise<string | null> => {
+    const controller = new AbortController();
+    controllersRef.current.push(controller);
 
-      setError(null);
-
-      if (mode === "device") {
-        speakDevice(text);
-        return;
-      }
-
-      const audio = audioRef.current;
-      if (!audio) return speakDevice(text);
-
-      abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
-
-      try {
-        setSpeaking(true);
-        const res = await fetch("/api/speak", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text }),
-          signal: controller.signal,
-        });
-
+    return fetch("/api/speak", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+      signal: controller.signal,
+    })
+      .then(async (res) => {
         if (!res.ok) {
           const detail = await res.json().catch(() => null);
           throw new Error(detail?.error || `speak failed (${res.status})`);
         }
-
-        const blob = await res.blob();
-        if (controller.signal.aborted) return;
-
-        if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-        urlRef.current = URL.createObjectURL(blob);
-        audio.src = urlRef.current;
-        await audio.play();
-      } catch (err) {
-        if ((err as Error).name === "AbortError") return;
-        setSpeaking(false);
-        // Never go silent because the API had a bad day.
-        // Show what actually went wrong. A generic message here cost hours.
+        const url = URL.createObjectURL(await res.blob());
+        urlsRef.current.push(url);
+        return url;
+      })
+      .catch((err) => {
+        if ((err as Error).name === "AbortError" || gen !== genRef.current) return null;
         setError(
           `Natural voice unavailable — ${(err as Error).message.slice(0, 200)}. Using the device voice.`
         );
         speakDevice(text);
+        return null;
+      });
+  }, [speakDevice]);
+
+  const playNext = useCallback(() => {
+    const gen = genRef.current;
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const item = queueRef.current.shift();
+    if (!item) {
+      playingRef.current = false;
+      setSpeaking(false);
+      return;
+    }
+
+    playingRef.current = true;
+    setSpeaking(true);
+
+    void item.audio.then((url) => {
+      if (gen !== genRef.current) return;
+      if (!url) {
+        // This chunk fell back to the device voice; move on.
+        playNext();
+        return;
       }
+      audio.src = url;
+      audio.onended = () => {
+        if (gen === genRef.current) playNext();
+      };
+      audio.onerror = () => {
+        if (gen === genRef.current) playNext();
+      };
+      void audio.play().catch(() => {
+        if (gen === genRef.current) playNext();
+      });
+    });
+  }, []);
+
+  const enqueue = useCallback(
+    (text: string) => {
+      const gen = genRef.current;
+      queueRef.current.push({ text, audio: synthesise(text, gen) });
+      if (!playingRef.current) playNext();
     },
-    [enabled, mode, speakDevice]
+    [synthesise, playNext]
   );
 
-  return { enabled, mode, setMode, supported, speaking, error, toggle, speak, shutUp, unlock };
+  /** Called on each streamed delta with the FULL text so far. */
+  const feed = useCallback(
+    (fullText: string) => {
+      if (!enabledRef.current) return;
+      if (spokenRef.current >= SPEAK_BUDGET) return;
+
+      const cleaned = clean(fullText);
+      if (cleaned.length <= consumedRef.current) return;
+
+      bufferRef.current += cleaned.slice(consumedRef.current);
+      consumedRef.current = cleaned.length;
+
+      while (spokenRef.current < SPEAK_BUDGET) {
+        const first = spokenRef.current === 0;
+        const [chunk, rest] = takeChunk(bufferRef.current, false, first ? MIN_FIRST_CHUNK : MIN_CHUNK);
+        if (!chunk) break;
+        bufferRef.current = rest;
+        spokenRef.current += chunk.length;
+        if (modeRef.current === "device") speakDevice(chunk);
+        else enqueue(chunk);
+      }
+    },
+    [enqueue, speakDevice]
+  );
+
+  /** Called once the reply has finished streaming. */
+  const endFeed = useCallback(() => {
+    if (!enabledRef.current) return;
+    if (spokenRef.current >= SPEAK_BUDGET) return;
+    const [chunk] = takeChunk(bufferRef.current, true);
+    bufferRef.current = "";
+    if (!chunk) return;
+    spokenRef.current += chunk.length;
+    if (modeRef.current === "device") speakDevice(chunk);
+    else enqueue(chunk);
+  }, [enqueue, speakDevice]);
+
+  /** Start of a new reply. */
+  const startFeed = useCallback(() => {
+    shutUp();
+    setError(null);
+  }, [shutUp]);
+
+  /** One-shot, for the settings preview. */
+  const speak = useCallback(
+    (raw: string) => {
+      if (!enabledRef.current) return;
+      const text = clean(raw).slice(0, SPEAK_BUDGET);
+      if (!text) return;
+      shutUp();
+      setError(null);
+      if (modeRef.current === "device") speakDevice(text);
+      else enqueue(text);
+    },
+    [shutUp, speakDevice, enqueue]
+  );
+
+  const setMode = useCallback(
+    (next: VoiceMode) => {
+      setModeState(next);
+      try {
+        localStorage.setItem(VOICE_MODE_KEY, next);
+      } catch {
+        /* ignore */
+      }
+      shutUp();
+    },
+    [shutUp]
+  );
+
+  const toggle = useCallback(() => {
+    setEnabled((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(VOICE_PREF_KEY, next ? "on" : "off");
+      } catch {
+        /* ignore */
+      }
+      if (next) unlock();
+      else shutUp();
+      return next;
+    });
+  }, [unlock, shutUp]);
+
+  return {
+    enabled,
+    mode,
+    setMode,
+    supported,
+    speaking,
+    error,
+    toggle,
+    speak,
+    startFeed,
+    feed,
+    endFeed,
+    shutUp,
+    unlock,
+  };
 }

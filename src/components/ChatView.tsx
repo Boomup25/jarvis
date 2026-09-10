@@ -65,7 +65,6 @@ export function ChatView({
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const spokenRef = useRef<string>("");
 
   const voice = useSpeechOutput();
 
@@ -112,7 +111,9 @@ export function ChatView({
       setInput("");
       setBusy(true);
       setStatus("Thinking");
-      spokenRef.current = "";
+
+      voice.startFeed();
+      let assistantText = "";
 
       const userMessage: ChatMessage = { id: `u-${Date.now()}`, role: "user", content: trimmed };
       const assistantId = `a-${Date.now()}`;
@@ -159,7 +160,11 @@ export function ChatView({
             switch (event.type) {
               case "text":
                 setStatus(null);
+                assistantText += event.delta;
                 patch((m) => ({ ...m, content: m.content + event.delta }));
+                // Speak sentence-by-sentence as it arrives rather than waiting
+                // for the whole reply, then synthesis, then download.
+                voice.feed(assistantText);
                 break;
               case "model":
                 patch((m) => ({ ...m, model: event.model }));
@@ -182,6 +187,7 @@ export function ChatView({
               case "done":
                 setConversationId(event.conversationId);
                 setStatus(null);
+                voice.endFeed();
                 break;
               case "error":
                 setError(event.message);
@@ -197,15 +203,7 @@ export function ChatView({
         setBusy(false);
         setStatus(null);
         abortRef.current = null;
-        // Read the finished reply out loud, once.
-        setMessages((prev) => {
-          const last = prev.find((m) => m.id === assistantId);
-          if (last?.content && last.content !== spokenRef.current) {
-            spokenRef.current = last.content;
-            void voice.speak(last.content);
-          }
-          return prev;
-        });
+        voice.endFeed();
       }
     },
     [busy, conversationId, voice]
