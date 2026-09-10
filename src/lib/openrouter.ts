@@ -15,9 +15,14 @@ const BASE = "https://openrouter.ai/api/v1";
 
 export type Role = "system" | "user" | "assistant" | "tool";
 
+/** A multimodal content part. Text-only turns still pass a plain string. */
+export type ContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
 export interface ChatMessage {
   role: Role;
-  content: string | null;
+  content: string | ContentPart[] | null;
   name?: string;
   tool_call_id?: string;
   tool_calls?: ToolCall[];
@@ -223,12 +228,98 @@ export async function completeJson<T>(opts: {
   return null;
 }
 
+export interface Citation {
+  url: string;
+  title: string;
+}
+
+export interface WebSearchResult {
+  answer: string;
+  citations: Citation[];
+}
+
+/**
+ * One web-grounded question, answered.
+ *
+ * OpenRouter's web plugin is a per-REQUEST option, not a per-tool one — so
+ * enabling it globally would bill a search on every single message. Instead
+ * this runs as its own call, triggered only when the model decides it needs
+ * facts it doesn't have. Roughly $0.007 a search.
+ */
+export async function webSearch(query: string, maxResults = 5): Promise<WebSearchResult> {
+  const res = await fetch(`${BASE}/chat/completions`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({
+      model: process.env.OPENROUTER_SEARCH_MODEL?.trim() || modelChain()[0],
+      plugins: [{ id: "web", max_results: maxResults }],
+      max_tokens: 900,
+      temperature: 0.2,
+      messages: [
+        {
+          role: "system",
+          content:
+            "Answer the question using the search results. Be specific and include " +
+            "numbers, dates and names. State plainly when sources disagree or when " +
+            "the answer is uncertain. Do not pad.",
+        },
+        { role: "user", content: query },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`Search failed (${res.status}) ${detail.slice(0, 200)}`);
+  }
+
+  const json = await res.json();
+  const message = json.choices?.[0]?.message ?? {};
+  const citations: Citation[] = (message.annotations ?? [])
+    .filter((a: { type?: string }) => a?.type === "url_citation")
+    .map((a: { url_citation: Citation }) => ({
+      url: a.url_citation?.url,
+      title: a.url_citation?.title,
+    }))
+    .filter((c: Citation) => Boolean(c.url));
+
+  return { answer: String(message.content ?? ""), citations };
+}
+
 export interface OpenRouterModel {
   id: string;
   name: string;
   context_length: number;
   pricing: { prompt: string; completion: string };
   supported_parameters?: string[];
+  architecture?: { input_modalities?: string[]; output_modalities?: string[] };
+  input_modalities?: string[];
+}
+
+/** Models that accept image input. The field moved into `architecture` at some
+ *  point, so check both rather than assume. */
+export function supportsVision(model: OpenRouterModel): boolean {
+  const modalities = model.architecture?.input_modalities ?? model.input_modalities ?? [];
+  return modalities.includes("image");
+}
+
+let visionCache: { at: number; models: string[] } | null = null;
+
+/** Free/cheap models that can read an image, newest cache within 30 minutes. */
+export async function discoverVisionModels(): Promise<string[]> {
+  if (visionCache && Date.now() - visionCache.at < 30 * 60 * 1000) return visionCache.models;
+  try {
+    const all = await listModels();
+    const models = all
+      .filter(supportsVision)
+      .sort((a, b) => Number(isFree(b)) - Number(isFree(a)))
+      .map((m) => m.id)
+      .slice(0, 8);
+    visionCache = { at: Date.now(), models };
+    return models;
+  } catch {
+    return [];
+  }
 }
 
 /** Live model catalogue, so the settings page never shows a dead free model. */

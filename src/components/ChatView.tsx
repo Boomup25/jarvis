@@ -8,7 +8,9 @@ import { useMicLevel } from "./useMicLevel";
 import { ReactorOrb, type OrbState } from "./ReactorOrb";
 import { SettingsSheet } from "./SettingsSheet";
 import { HistorySheet } from "./HistorySheet";
+import { prepareImage, type PreparedImage } from "./imageUtils";
 import {
+  CameraIcon,
   GearIcon,
   HistoryIcon,
   MicIcon,
@@ -20,12 +22,19 @@ import {
   XIcon,
 } from "./Icons";
 
+interface Citation {
+  url: string;
+  title: string;
+}
+
 interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
   pages?: SavedPage[];
   memories?: string[];
+  sources?: Citation[];
+  imageUrl?: string;
   model?: string;
   at?: number;
 }
@@ -85,11 +94,14 @@ export function ChatView({
   const [activeModel, setActiveModel] = useState<string | null>(null);
   const [latency, setLatency] = useState<number | null>(null);
   const [chips, setChips] = useState<Chip[]>([]);
+  const [attachment, setAttachment] = useState<PreparedImage | null>(null);
+  const [attaching, setAttaching] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const voice = useSpeechOutput();
   const micLevel = useMicLevel();
@@ -120,13 +132,23 @@ export function ChatView({
         setMessages(
           data.conversation.messages
             .filter((m: { role: string }) => m.role === "user" || m.role === "assistant")
-            .map((m: { id: string; role: string; content: string; model?: string; createdAt: string }) => ({
-              id: m.id,
-              role: m.role as "user" | "assistant",
-              content: m.content,
-              model: m.model ?? undefined,
-              at: new Date(m.createdAt).getTime(),
-            }))
+            .map(
+              (m: {
+                id: string;
+                role: string;
+                content: string;
+                model?: string;
+                imageUrl?: string;
+                createdAt: string;
+              }) => ({
+                id: m.id,
+                role: m.role as "user" | "assistant",
+                content: m.content,
+                model: m.model ?? undefined,
+                imageUrl: m.imageUrl ?? undefined,
+                at: new Date(m.createdAt).getTime(),
+              })
+            )
         );
       })
       .catch(() => {});
@@ -145,7 +167,8 @@ export function ChatView({
   const send = useCallback(
     async (text: string) => {
       const trimmed = text.trim();
-      if (!trimmed || busy) return;
+      const photo = attachment;
+      if ((!trimmed && !photo) || busy) return;
 
       // Inside the tap/Enter — the only moment iOS will prime speech synthesis.
       voice.unlock();
@@ -161,10 +184,13 @@ export function ChatView({
       setStatus("Thinking");
       setLatency(null);
 
+      setAttachment(null);
+
       const userMessage: ChatMessage = {
         id: `u-${Date.now()}`,
         role: "user",
-        content: trimmed,
+        content: trimmed || (photo ? "What am I looking at?" : ""),
+        imageUrl: photo?.thumb,
         at: Date.now(),
       };
       const assistantId = `a-${Date.now()}`;
@@ -184,7 +210,12 @@ export function ChatView({
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: trimmed, conversationId }),
+          body: JSON.stringify({
+            message: trimmed,
+            conversationId,
+            image: photo?.full,
+            thumbnail: photo?.thumb,
+          }),
           signal: controller.signal,
         });
 
@@ -230,6 +261,12 @@ export function ChatView({
               case "match":
                 setMatches(event.pages ?? []);
                 break;
+              case "searching":
+                setStatus(`Searching · ${String(event.query).slice(0, 32)}`);
+                break;
+              case "sources":
+                patch((m) => ({ ...m, sources: (event as unknown as { citations: Citation[] }).citations }));
+                break;
               case "tool_start":
                 setStatus(TOOL_LABELS[event.name as keyof typeof TOOL_LABELS] ?? "Working");
                 break;
@@ -264,7 +301,7 @@ export function ChatView({
         voice.endFeed();
       }
     },
-    [busy, conversationId, voice]
+    [busy, conversationId, voice, attachment]
   );
 
   const mic = useSpeechInput(
@@ -393,8 +430,16 @@ export function ChatView({
               <li key={message.id} className="rise">
                 {message.role === "user" ? (
                   <div className="flex justify-end">
-                    <div className="notch-tr max-w-[86%] border border-arc/25 bg-arc/[0.07] px-3.5 py-2.5 text-[0.92rem] leading-snug">
-                      {message.content}
+                    <div className="notch-tr max-w-[86%] border border-arc/25 bg-arc/[0.07] text-[0.92rem] leading-snug">
+                      {message.imageUrl && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={message.imageUrl}
+                          alt="Attached photo"
+                          className="max-h-56 w-full object-cover"
+                        />
+                      )}
+                      <p className="px-3.5 py-2.5">{message.content}</p>
                     </div>
                   </div>
                 ) : (
@@ -411,6 +456,26 @@ export function ChatView({
                         <span className="caret text-mist" />
                       )}
                     </div>
+
+                    {message.sources && message.sources.length > 0 && (
+                      <div className="mt-2.5 pl-3">
+                        <p className="readout mb-1">Sources</p>
+                        <ul className="space-y-0.5">
+                          {message.sources.slice(0, 5).map((source) => (
+                            <li key={source.url}>
+                              <a
+                                href={source.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="block truncate text-[0.72rem] text-arc/80 underline underline-offset-2"
+                              >
+                                {source.title || source.url}
+                              </a>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
 
                     {(message.pages?.length || message.memories?.length) && (
                       <div className="mt-2.5 space-y-1.5 pl-3">
@@ -490,6 +555,29 @@ export function ChatView({
           </div>
         )}
 
+        {attachment && (
+          <div className="mx-auto flex max-w-lg items-center gap-3 px-4 pt-2.5">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={attachment.thumb}
+              alt="Attached"
+              className="size-12 border border-arc/30 object-cover"
+            />
+            <p className="readout flex-1">
+              Photo attached · {attachment.width}×{attachment.height}
+            </p>
+            <button
+              onClick={() => setAttachment(null)}
+              aria-label="Remove photo"
+              className="border border-edge p-1.5 text-mist transition-colors hover:text-ember"
+            >
+              <XIcon className="size-4" />
+            </button>
+          </div>
+        )}
+
+        {attaching && <p className="mx-auto max-w-lg px-4 pt-2.5 readout">Preparing photo…</p>}
+
         {mic.listening && (
           <p className="mx-auto max-w-lg px-4 pt-2 readout">
             Listening · sends after {(mic.silenceMs / 1000).toFixed(1)}s quiet
@@ -524,6 +612,39 @@ export function ChatView({
             className="max-h-[132px] min-h-[42px] flex-1 resize-none border border-edge bg-void/60 px-3.5 py-2.5 text-[0.92rem] text-frost placeholder:text-mist/50 focus:border-arc/50 focus:outline-none"
           />
 
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (!file) return;
+              setAttaching(true);
+              try {
+                setAttachment(await prepareImage(file));
+              } catch {
+                setError("Couldn't read that image.");
+              } finally {
+                setAttaching(false);
+              }
+            }}
+          />
+
+          {!busy && !mic.listening && (
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              aria-label="Attach a photo"
+              className={`shrink-0 border p-3 transition-colors ${
+                attachment ? "border-arc/50 text-arc" : "border-edge text-mist hover:text-frost"
+              }`}
+            >
+              <CameraIcon className="size-5" />
+            </button>
+          )}
+
           {mic.supported && !busy && mic.listening && (
             <button
               type="button"
@@ -551,7 +672,7 @@ export function ChatView({
           <button
             type={busy ? "button" : "submit"}
             onClick={busy ? stop : undefined}
-            disabled={!busy && !input.trim()}
+            disabled={!busy && !input.trim() && !attachment}
             aria-label={busy ? "Stop" : "Send"}
             className="notch-tr shrink-0 bg-arc p-3 text-void transition-opacity disabled:opacity-25"
           >

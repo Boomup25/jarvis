@@ -87,6 +87,10 @@ model Message {
   /// user | assistant | tool
   role           String
   content        String       @default("")
+  /// Downscaled thumbnail (data URL) when the turn had a photo attached.
+  /// Only the thumbnail is kept — the full-size image goes to the model and
+  /// is never stored, which keeps this table small.
+  imageUrl       String?
   /// Raw tool_calls / tool results, kept for replay + debugging
   toolCalls      Json?
   model          String?

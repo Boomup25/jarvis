@@ -15,7 +15,7 @@
 import { prisma } from "@/lib/db";
 import { guard } from "@/lib/session";
 import { buildSystemPrompt } from "@/lib/prompt";
-import { streamChat, type ChatMessage, type ToolCall } from "@/lib/openrouter";
+import { streamChat, discoverVisionModels, type ChatMessage, type ToolCall } from "@/lib/openrouter";
 import { runTool, toolSchemas } from "@/lib/tools";
 import { extractMemories } from "@/lib/memory";
 import { findSimilarPages, STRONG_MATCH } from "@/lib/pages";
@@ -33,7 +33,15 @@ export async function POST(req: Request) {
   const denied = await guard();
   if (denied) return denied;
 
-  let body: { message?: string; conversationId?: string; models?: string[] };
+  let body: {
+    message?: string;
+    conversationId?: string;
+    models?: string[];
+    /** Full-size data URL, sent to the model and never stored. */
+    image?: string;
+    /** Downscaled data URL, stored so the transcript still shows the photo. */
+    thumbnail?: string;
+  };
   try {
     body = await req.json();
   } catch {
@@ -41,7 +49,14 @@ export async function POST(req: Request) {
   }
 
   const userText = String(body.message ?? "").trim();
-  if (!userText) return Response.json({ error: "Empty message" }, { status: 400 });
+  const image = typeof body.image === "string" && body.image.startsWith("data:image/") ? body.image : null;
+
+  if (!userText && !image) return Response.json({ error: "Empty message" }, { status: 400 });
+
+  // Guard the payload: a phone photo can be several MB before downscaling.
+  if (image && image.length > 8_000_000) {
+    return Response.json({ error: "Image too large" }, { status: 413 });
+  }
 
   const conversation = body.conversationId
     ? await prisma.conversation.findUnique({ where: { id: body.conversationId } })
@@ -54,7 +69,12 @@ export async function POST(req: Request) {
     }));
 
   await prisma.message.create({
-    data: { conversationId: convo.id, role: "user", content: userText },
+    data: {
+      conversationId: convo.id,
+      role: "user",
+      content: userText || "(photo)",
+      imageUrl: typeof body.thumbnail === "string" ? body.thumbnail : null,
+    },
   });
 
   const encoder = new TextEncoder();
@@ -91,7 +111,18 @@ export async function POST(req: Request) {
         // A model picked in the UI leads; the free chain stays behind it so a
         // rate-limited or retired choice still produces an answer.
         const settings = await getSettings();
-        const chain = body.models?.length ? body.models : resolveChain(settings.model);
+        let chain = body.models?.length ? body.models : resolveChain(settings.model);
+
+        // A photo needs a model that can actually see it. The free default
+        // chain already can, but a text-only paid model would silently ignore
+        // the image — so swap in vision-capable models for this turn.
+        if (image) {
+          const vision = await discoverVisionModels();
+          if (vision.length) {
+            const preferred = chain.filter((m) => vision.includes(m));
+            chain = [...preferred, ...vision.filter((m) => !preferred.includes(m))];
+          }
+        }
 
         const history = await prisma.message.findMany({
           where: { conversationId: convo.id },
@@ -107,6 +138,18 @@ export async function POST(req: Request) {
             .filter((m) => m.content.trim().length > 0)
             .map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
         ];
+
+        // Attach the photo to the latest turn only. Replaying old images on
+        // every subsequent message would multiply cost for little benefit.
+        if (image) {
+          messages[messages.length - 1] = {
+            role: "user",
+            content: [
+              { type: "text", text: userText || "What am I looking at?" },
+              { type: "image_url", image_url: { url: image } },
+            ],
+          };
+        }
 
         let finalText = "";
         let usedModel = "";

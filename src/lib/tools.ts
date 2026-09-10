@@ -6,6 +6,7 @@
 import { prisma } from "./db";
 import { rememberFact } from "./memory";
 import { findSimilarPages, normalizeType, uniqueSlug, PAGE_TYPES } from "./pages";
+import { webSearch } from "./openrouter";
 import type { ToolSchema } from "./openrouter";
 
 export interface ToolContext {
@@ -285,6 +286,46 @@ const tools: Record<string, ToolDef> = {
       });
       ctx.emit({ type: "activity_logged", kind, id: entry.id });
       return { ok: true, id: entry.id };
+    },
+  },
+
+  search_web: {
+    schema: {
+      type: "function",
+      function: {
+        name: "search_web",
+        description:
+          "Search the web for current information you don't already know: prices, news, " +
+          "product specs, opening hours, sports results, documentation, anything that " +
+          "changed after your training. Costs a small amount per search, so use it when " +
+          "the answer genuinely depends on current facts — not for general knowledge, " +
+          "and not for anything about the user, which is in memory.",
+        parameters: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "A specific, well-formed search question" },
+          },
+          required: ["query"],
+        },
+      },
+    },
+    handler: async (args, ctx) => {
+      const query = String(args.query ?? "").trim();
+      if (!query) return { ok: false, error: "query required" };
+
+      ctx.emit({ type: "searching", query });
+      try {
+        const { answer, citations } = await webSearch(query);
+        ctx.emit({ type: "sources", citations });
+        return {
+          ok: true,
+          answer,
+          sources: citations,
+          note: "Cite these as markdown links when you use them.",
+        };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : "search failed" };
+      }
     },
   },
 
