@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "JARVIS",
+    "slug": "jarvis-ios",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "jarvis",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.jarvis.assistant",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "JARVIS uses the microphone when you choose to speak.",
+        "NSSpeechRecognitionUsageDescription": "JARVIS uses speech recognition when you choose voice input."
+      }
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-av",
+      "expo-asset"
+    ]
+  }
+}
