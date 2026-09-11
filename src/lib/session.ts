@@ -1,17 +1,24 @@
+import { cache } from "react";
 import { cookies } from "next/headers";
 import type { User } from "@prisma/client";
 import { SESSION_COOKIE, readSessionToken } from "./auth";
 import { prisma } from "./db";
 
-/** The signed-in user, or null. Every scoped query starts here. */
-export async function currentUser(): Promise<User | null> {
+/**
+ * The signed-in user, or null. Every scoped query starts here.
+ *
+ * Wrapped in React's cache() so the layout and the page it renders share one
+ * lookup per request instead of hitting the session table twice. Scope is a
+ * single request, so there is no cross-user bleed.
+ */
+export const currentUser = cache(async (): Promise<User | null> => {
   const jar = await cookies();
   const userId = await readSessionToken(jar.get(SESSION_COOKIE)?.value);
   if (!userId) return null;
 
   const user = await prisma.user.findUnique({ where: { id: userId } });
   return user && user.active ? user : null;
-}
+});
 
 export async function isAuthed(): Promise<boolean> {
   return (await currentUser()) !== null;

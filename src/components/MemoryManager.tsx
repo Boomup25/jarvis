@@ -119,8 +119,8 @@ export function MemoryManager({
   }
 
   return (
-    <main className="h-full overflow-y-auto overscroll-contain px-4 pb-10 pt-8 safe-top">
-      <div className="mx-auto max-w-lg">
+    <main className="h-full overflow-y-auto overscroll-contain px-4 pb-10 page-top lg:px-8 lg:page-top-wide">
+      <div className="mx-auto w-full max-w-lg md:max-w-2xl lg:max-w-6xl">
       <div className="flex items-center gap-3">
         <BrainIcon className="size-6 text-violet" />
         <div>
@@ -129,7 +129,10 @@ export function MemoryManager({
         </div>
       </div>
 
-      <section className="mt-5 rounded-2xl glass p-4">
+      {/* Identity is a short form that never grows; the memory list is the part
+          that does. Side by side from lg so neither pushes the other down. */}
+      <div className="lg:mt-2 lg:grid lg:grid-cols-[19rem_minmax(0,1fr)] lg:items-start lg:gap-7">
+      <section className="mt-5 rounded-2xl glass p-4 lg:sticky lg:top-0">
         <h2 className="text-[0.7rem] uppercase tracking-[0.18em] text-mist">Identity</h2>
         <div className="mt-3 space-y-2.5">
           <Field
@@ -167,7 +170,8 @@ export function MemoryManager({
         </div>
       </section>
 
-      <form onSubmit={addMemory} className="mt-5 flex gap-2">
+      <div className="min-w-0">
+      <form onSubmit={addMemory} className="mt-5 flex gap-2 lg:mt-5">
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
@@ -215,7 +219,7 @@ export function MemoryManager({
           {grouped.map(([category, items]) => (
             <section key={category}>
               <h2 className="text-[0.68rem] uppercase tracking-[0.18em] text-mist">{category}</h2>
-              <ul className="mt-2 space-y-1.5">
+              <ul className="mt-2 space-y-1.5 xl:grid xl:grid-cols-2 xl:gap-1.5 xl:space-y-0">
                 {items.map((item) => (
                   <li
                     key={item.id}
@@ -248,6 +252,8 @@ export function MemoryManager({
           ))}
         </div>
       )}
+      </div>
+      </div>
     </div>
     </main>
   );

@@ -7,7 +7,8 @@ import { useSpeechInput, useSpeechOutput } from "./useSpeech";
 import { useMicLevel } from "./useMicLevel";
 import { ReactorOrb, type OrbState } from "./ReactorOrb";
 import { SettingsSheet } from "./SettingsSheet";
-import { HistorySheet } from "./HistorySheet";
+import { FOCUS_COMPOSER } from "./commandBus";
+import { HistorySheet, HistoryRail } from "./HistorySheet";
 import { prepareImage, type PreparedImage } from "./imageUtils";
 import {
   CameraIcon,
@@ -101,6 +102,13 @@ export function ChatView({
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // "/" anywhere on the page jumps to the composer, the way every chat app does.
+  useEffect(() => {
+    const focus = () => textareaRef.current?.focus();
+    window.addEventListener(FOCUS_COMPOSER, focus);
+    return () => window.removeEventListener(FOCUS_COMPOSER, focus);
+  }, []);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const voice = useSpeechOutput();
@@ -331,6 +339,17 @@ export function ChatView({
     mic.start();
   };
 
+  // Escape backs out of voice capture. The overlay covers the whole screen, so
+  // without this a desktop user has to find the Cancel button with the mouse.
+  useEffect(() => {
+    if (!mic.listening) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") mic.cancel();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mic]);
+
   const stop = () => {
     abortRef.current?.abort();
     voice.shutUp();
@@ -352,10 +371,12 @@ export function ChatView({
   const modelLabel = activeModel ?? selectedModel;
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full">
+      {/* The transcript column. The rail below sits beside it from xl. */}
+      <div className="flex h-full min-w-0 flex-1 flex-col">
       {/* ---- header ---------------------------------------------------- */}
       <header className="shrink-0 border-b border-edge bg-abyss/70 backdrop-blur-xl safe-top">
-        <div className="mx-auto flex max-w-lg items-center gap-3 px-4 pt-3">
+        <div className="mx-auto flex max-w-lg md:max-w-2xl lg:max-w-3xl items-center gap-3 px-4 pt-3">
           <ReactorOrb
             state={orbState}
             level={micLevel.level}
@@ -379,10 +400,11 @@ export function ChatView({
             </p>
           </div>
 
+          {/* Redundant from xl, where the rail is always on screen. */}
           <button
             onClick={() => setHistoryOpen(true)}
             aria-label="Conversation history"
-            className="p-2 text-mist transition-colors hover:text-frost"
+            className="p-2 text-mist transition-colors hover:text-frost xl:hidden"
           >
             <HistoryIcon className="size-[18px]" />
           </button>
@@ -405,7 +427,7 @@ export function ChatView({
         </div>
 
         {/* telemetry — machine data in mono, prose stays in the sans face */}
-        <div className="relative mx-auto flex max-w-lg items-center gap-3 overflow-hidden px-4 pb-2 pt-1.5">
+        <div className="relative mx-auto flex max-w-lg md:max-w-2xl lg:max-w-3xl items-center gap-3 overflow-hidden px-4 pb-2 pt-1.5">
           <span className="readout truncate">
             {modelLabel ? shortModel(modelLabel) : "auto"}
           </span>
@@ -422,7 +444,7 @@ export function ChatView({
 
       {/* ---- transcript -------------------------------------------------- */}
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        <div className="mx-auto flex min-h-full max-w-lg flex-col px-4 py-4">
+        <div className="mx-auto flex min-h-full max-w-lg md:max-w-2xl lg:max-w-3xl flex-col px-4 py-4">
           {messages.length === 0 && (
             <EmptyState
               orbState={orbState}
@@ -541,7 +563,7 @@ export function ChatView({
               WebkitMaskImage: "linear-gradient(90deg, #000 88%, transparent)",
             }}
           >
-            <div className="mx-auto flex max-w-lg gap-1.5 px-4 pb-1 pt-2.5">
+            <div className="mx-auto flex max-w-lg md:max-w-2xl lg:max-w-3xl gap-1.5 px-4 pb-1 pt-2.5">
               {chips.map((chip) => (
                 <button
                   key={chip.label}
@@ -563,7 +585,7 @@ export function ChatView({
         )}
 
         {attachment && (
-          <div className="mx-auto flex max-w-lg items-center gap-3 px-4 pt-2.5">
+          <div className="mx-auto flex max-w-lg md:max-w-2xl lg:max-w-3xl items-center gap-3 px-4 pt-2.5">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={attachment.thumb}
@@ -583,10 +605,10 @@ export function ChatView({
           </div>
         )}
 
-        {attaching && <p className="mx-auto max-w-lg px-4 pt-2.5 readout">Preparing photo…</p>}
+        {attaching && <p className="mx-auto max-w-lg md:max-w-2xl lg:max-w-3xl px-4 pt-2.5 readout">Preparing photo…</p>}
 
         {mic.listening && (
-          <p className="mx-auto max-w-lg px-4 pt-2 readout">
+          <p className="mx-auto max-w-lg md:max-w-2xl lg:max-w-3xl px-4 pt-2 readout">
             Listening · sends after {(mic.silenceMs / 1000).toFixed(1)}s quiet
           </p>
         )}
@@ -596,7 +618,7 @@ export function ChatView({
             e.preventDefault();
             void send(input);
           }}
-          className="mx-auto flex max-w-lg items-end gap-2 px-3 py-2.5"
+          className="mx-auto flex max-w-lg md:max-w-2xl lg:max-w-3xl items-end gap-2 px-3 py-2.5"
         >
           <textarea
             ref={textareaRef}
@@ -608,7 +630,9 @@ export function ChatView({
               el.style.height = `${Math.min(el.scrollHeight, 132)}px`;
             }}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
+              // Enter sends; Shift+Enter is a newline. Cmd/Ctrl+Enter also
+              // sends, because plenty of people have that in their fingers.
+              if (e.key === "Enter" && (!e.shiftKey || e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
                 void send(input);
               }
@@ -686,7 +710,11 @@ export function ChatView({
             {busy ? <StopIcon className="size-5" /> : <SendIcon className="size-5" />}
           </button>
         </form>
+        </div>
       </div>
+
+      {/* Always-visible conversation list, from xl up. */}
+      <HistoryRail onPick={loadConversation} currentId={conversationId} />
 
       {/* ---- overlays ---------------------------------------------------- */}
       {mic.listening && (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export type OrbState = "idle" | "listening" | "thinking" | "speaking";
 
@@ -38,7 +38,17 @@ export function ReactorOrb({
   pressLabel?: string;
   className?: string;
 }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  /**
+   * The canvas node lives in state, not a ref, so the draw loop re-initialises
+   * whenever React hands us a different element.
+   *
+   * This matters because `onPress` arrives late: mic support is detected after
+   * mount, which flips this component from a bare <canvas> to a <button> that
+   * wraps one. React unmounts the first canvas and mounts a second — and an
+   * effect keyed on [] would happily keep painting into the detached original,
+   * leaving a blank orb on screen.
+   */
+  const [canvasNode, setCanvasNode] = useState<HTMLCanvasElement | null>(null);
   const stateRef = useRef<OrbState>(state);
   const levelRef = useRef(level);
   const activityRef = useRef(activityAt);
@@ -50,7 +60,7 @@ export function ReactorOrb({
   activityRef.current = activityAt;
 
   useEffect(() => {
-    const canvas = canvasRef.current;
+    const canvas = canvasNode;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
@@ -282,7 +292,7 @@ export function ReactorOrb({
       cancelAnimationFrame(raf);
       observer.disconnect();
     };
-  }, []);
+  }, [canvasNode]);
 
   const label =
     state === "listening"
@@ -293,11 +303,11 @@ export function ReactorOrb({
           ? "Speaking"
           : "Idle";
 
-  const canvas = (
-    <canvas ref={canvasRef} className={onPress ? "size-full" : className} role="img" aria-label={label} />
-  );
+  // The canvas always fills its wrapper and the wrapper always carries the
+  // size, so the two forms below differ only in the element type.
+  const canvas = <canvas ref={setCanvasNode} className="size-full" role="img" aria-label={label} />;
 
-  if (!onPress) return canvas;
+  if (!onPress) return <div className={className}>{canvas}</div>;
 
   return (
     <button
@@ -307,7 +317,7 @@ export function ReactorOrb({
         pressRef.current = Date.now();
       }}
       onClick={onPress}
-      className={`relative block cursor-pointer touch-manipulation transition-transform active:scale-95 ${className ?? ""}`}
+      className={`relative block cursor-pointer touch-manipulation transition-transform active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-arc ${className ?? ""}`}
     >
       {canvas}
     </button>

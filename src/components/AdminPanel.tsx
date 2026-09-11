@@ -100,7 +100,9 @@ export function AdminPanel() {
   }
 
   return (
-    <div className="mt-6 space-y-7">
+    <div className="mt-6 space-y-7 lg:grid lg:grid-cols-2 lg:items-start lg:gap-8 lg:space-y-0">
+      {/* Invites on the left, accounts on the right — they're read together. */}
+      <div className="space-y-7">
       <section>
         <h2 className="readout">Create an invite</h2>
         <div className="mt-2 flex gap-2">
@@ -166,6 +168,9 @@ export function AdminPanel() {
         </section>
       )}
 
+      </div>
+
+      <div className="space-y-7">
       <section>
         <div className="flex items-baseline justify-between">
           <h2 className="readout">Accounts</h2>
@@ -250,6 +255,7 @@ export function AdminPanel() {
           the database is a single point of failure.
         </p>
       </section>
+      </div>
     </div>
   );
 }

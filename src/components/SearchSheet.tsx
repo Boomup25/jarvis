@@ -66,7 +66,7 @@ export function SearchSheet({ open, onClose }: { open: boolean; onClose: () => v
     <div className="fixed inset-0 z-50 flex flex-col">
       <button aria-label="Close" onClick={onClose} className="absolute inset-0 bg-void/85 backdrop-blur-sm" />
 
-      <div className="safe-top relative mx-auto flex h-full w-full max-w-lg flex-col px-4 pt-4">
+      <div className="relative mx-auto flex h-full w-full max-w-lg flex-col px-4 pt-[calc(1rem+env(safe-area-inset-top))]">
         <div className="relative shrink-0">
           <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-mist" />
           <input

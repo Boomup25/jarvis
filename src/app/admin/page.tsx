@@ -14,8 +14,8 @@ export default async function AdminPage() {
   if (!isOwner(user)) redirect("/");
 
   return (
-    <main className="h-full overflow-y-auto overscroll-contain px-4 pb-10 pt-8 safe-top">
-      <div className="mx-auto max-w-lg">
+    <main className="h-full overflow-y-auto overscroll-contain px-4 pb-10 page-top lg:px-8 lg:page-top-wide">
+      <div className="mx-auto w-full max-w-lg md:max-w-2xl lg:max-w-5xl">
         <Link href="/" className="readout hover:text-frost">
           ← Brief
         </Link>

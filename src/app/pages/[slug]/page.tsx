@@ -36,12 +36,16 @@ export default async function PageView({ params }: { params: Promise<{ slug: str
   const Icon = PAGE_ICONS[page.type as keyof typeof PAGE_ICONS] ?? PAGE_ICONS.note;
 
   return (
-    <main className="h-full overflow-y-auto overscroll-contain px-4 pb-10 pt-6 safe-top">
-      <div className="mx-auto max-w-lg">
+    <main className="h-full overflow-y-auto overscroll-contain px-4 pb-10 page-top lg:px-8 lg:page-top-wide">
+      <div className="mx-auto w-full max-w-lg md:max-w-2xl lg:max-w-5xl">
       <Link href="/pages" className="text-[0.75rem] text-mist transition-colors hover:text-frost">
         ← Library
       </Link>
 
+      {/* Prose stays at a readable measure; the metadata and actions move into
+          a rail rather than stretching to match it. */}
+      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_15rem] lg:items-start lg:gap-8">
+      <div className="min-w-0">
       <header className="mt-4 flex items-start gap-3">
         <Icon className="mt-1 size-5 shrink-0 text-arc" />
         <div className="min-w-0 flex-1">
@@ -58,7 +62,7 @@ export default async function PageView({ params }: { params: Promise<{ slug: str
       {page.summary && <p className="mt-3 text-[0.86rem] text-mist">{page.summary}</p>}
 
       {page.tags.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-1.5">
+        <div className="mt-3 flex flex-wrap gap-1.5 lg:hidden">
           {page.tags.map((tag) => (
             <span key={tag} className="rounded-full border border-edge px-2.5 py-0.5 text-[0.68rem] text-mist">
               {tag}
@@ -73,8 +77,24 @@ export default async function PageView({ params }: { params: Promise<{ slug: str
         initialSummary={page.summary}
         initialContent={page.contentMd}
       />
+      </div>
 
-      <PageActions slug={page.slug} title={page.title} type={page.type} pinned={page.pinned} />
+      <aside className="lg:sticky lg:top-4">
+        {page.tags.length > 0 && (
+          <div className="hidden lg:block">
+            <p className="readout">Tags</p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {page.tags.map((tag) => (
+                <span key={tag} className="rounded-full border border-edge px-2.5 py-0.5 text-[0.68rem] text-mist">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+        <PageActions slug={page.slug} title={page.title} type={page.type} pinned={page.pinned} />
+      </aside>
+      </div>
     </div>
     </main>
   );

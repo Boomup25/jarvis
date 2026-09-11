@@ -61,9 +61,20 @@ body {
   background-attachment: fixed;
 }
 
-/* Respect the iPhone notch / home indicator */
-.safe-top { padding-top: env(safe-area-inset-top); }
-.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+/* Respect the iPhone notch / home indicator.
+
+   These are @utility, not plain classes, so they live in Tailwind's utilities
+   layer. As plain classes they sat outside every layer, which meant they beat
+   any padding utility they were combined with — every page that wrote
+   `pt-6 safe-top` was silently getting zero top padding on desktop. Use these
+   only on elements that set no other padding on that side. */
+@utility safe-top { padding-top: env(safe-area-inset-top); }
+@utility safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+
+/* Top padding for a scrolling page: the design's spacing plus the notch, in one
+   declaration so the two can't fight. Pair as `page-top lg:page-top-wide`. */
+@utility page-top { padding-top: calc(1.5rem + env(safe-area-inset-top)); }
+@utility page-top-wide { padding-top: calc(2rem + env(safe-area-inset-top)); }
 
 @utility glass {
   background: color-mix(in srgb, var(--color-panel) 78%, transparent);
@@ -115,6 +126,18 @@ body {
 
 @keyframes rise { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
 .rise { animation: rise 0.28s ease-out both; }
+
+/* Keyboard focus.
+   
+   The app was built touch-first and had no visible focus indicator anywhere,
+   which made it impossible to navigate by keyboard on a desktop. Inputs that
+   set `focus:outline-none` keep winning on specificity and show their arc
+   border instead — that's still a visible indicator, so they're left alone. */
+:focus-visible {
+  outline: 2px solid var(--color-arc);
+  outline-offset: 2px;
+  border-radius: 1px;
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }

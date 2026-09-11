@@ -13,10 +13,11 @@ const TABS = [
 
 export function NavBar() {
   const pathname = usePathname();
-  if (pathname === "/login") return null;
+  if (pathname === "/login" || pathname === "/signup") return null;
 
+  // From lg the SideNav takes over, so this bar leaves the layout entirely.
   return (
-    <nav className="safe-bottom shrink-0 border-t border-edge bg-abyss/85 backdrop-blur-xl">
+    <nav className="safe-bottom shrink-0 border-t border-edge bg-abyss/85 backdrop-blur-xl lg:hidden">
       <ul className="mx-auto flex max-w-lg">
         {TABS.map(({ href, label, Icon }) => {
           const active = href === "/" ? pathname === "/" : pathname.startsWith(href);

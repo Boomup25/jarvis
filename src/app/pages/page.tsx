@@ -32,8 +32,8 @@ export default async function LibraryPage({
   const countFor = (t: string) => counts.find((c) => c.type === t)?._count ?? 0;
 
   return (
-    <main className="h-full overflow-y-auto overscroll-contain px-4 pb-10 pt-8 safe-top">
-      <div className="mx-auto max-w-lg">
+    <main className="h-full overflow-y-auto overscroll-contain px-4 pb-10 page-top lg:px-8 lg:page-top-wide">
+      <div className="mx-auto w-full max-w-lg md:max-w-2xl lg:max-w-6xl">
       <h1 className="text-xl font-semibold">Library</h1>
       <p className="mt-1 text-[0.8rem] text-mist">
         Everything JARVIS has written down for you.
@@ -60,14 +60,14 @@ export default async function LibraryPage({
           </Link>
         </div>
       ) : (
-        <ul className="mt-4 space-y-2">
+        <ul className="mt-4 space-y-2 md:grid md:grid-cols-2 md:gap-2 md:space-y-0 xl:grid-cols-3">
           {pages.map((page) => {
             const Icon = PAGE_ICONS[page.type as keyof typeof PAGE_ICONS] ?? PAGE_ICONS.note;
             return (
               <li key={page.slug}>
                 <Link
                   href={`/pages/${page.slug}`}
-                  className="block rounded-xl border border-edge bg-panel/50 p-3.5 transition-colors hover:border-arc/40"
+                  className="block h-full rounded-xl border border-edge bg-panel/50 p-3.5 transition-colors hover:border-arc/40"
                 >
                   <div className="flex items-start gap-3">
                     <Icon className="mt-0.5 size-4 shrink-0 text-arc" />
