@@ -1,6 +1,6 @@
 {
   "name": "jarvis-desktop",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "description": "Windows desktop launcher for the JARVIS bridge",
   "main": "main.mjs",
@@ -19,6 +19,7 @@
     "files": [
       "main.mjs",
       "preload.cjs",
+      "voice-preload.cjs",
       "renderer/**/*"
     ],
     "extraResources": [
@@ -40,5 +41,8 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
     }
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.2.0"
   }
 }

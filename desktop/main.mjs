@@ -17,6 +17,7 @@ let jarvisWindow = null;
 let bridgeProcess = null;
 let bridgeState = "stopped";
 let preferences = {};
+let transcriberPromise = null;
 
 function send(channel, value) {
   if (!windowRef || windowRef.isDestroyed()) return;
@@ -183,11 +184,17 @@ async function openJarvisWindow() {
     title: "JARVIS",
     icon: nativeImage.createEmpty(),
     webPreferences: {
+      preload: join(__dirname, "voice-preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
     },
   });
+  const jarvisSession = jarvisWindow.webContents.session;
+  jarvisSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    callback(permission === "media");
+  });
+  jarvisSession.setPermissionCheckHandler((_webContents, permission) => permission === "media");
   jarvisWindow.on("closed", () => { jarvisWindow = null; });
   jarvisWindow.webContents.on("did-fail-load", (_event, code, description, failedUrl, isMainFrame) => {
     if (!isMainFrame || !windowRef || windowRef.isDestroyed()) return;
@@ -204,6 +211,32 @@ async function openJarvisWindow() {
     jarvisWindow.close();
     jarvisWindow = null;
     return { ok: false, error: `Could not open JARVIS: ${error?.message ?? error}` };
+  }
+}
+
+async function transcribeAudio(payload) {
+  const samples = payload?.samples;
+  if (!(samples instanceof Float32Array) || !samples.length) {
+    return { ok: false, error: "No microphone audio was captured." };
+  }
+
+  if (!transcriberPromise) {
+    transcriberPromise = (async () => {
+      const { env, pipeline } = await import("@huggingface/transformers");
+      env.cacheDir = join(app.getPath("userData"), "models");
+      return pipeline("automatic-speech-recognition", "onnx-community/whisper-tiny.en", { dtype: "q8" });
+    })().catch((error) => {
+      transcriberPromise = null;
+      throw error;
+    });
+  }
+
+  try {
+    const transcriber = await transcriberPromise;
+    const result = await transcriber(samples);
+    return { ok: true, text: String(result?.text ?? "").trim() };
+  } catch (error) {
+    return { ok: false, error: `Desktop transcription failed: ${error?.message ?? error}` };
   }
 }
 async function rememberPassphrase(passphrase, remember) {
@@ -264,6 +297,7 @@ app.whenReady().then(async () => {
     return { ok: true };
   });
   ipcMain.handle("open-jarvis", () => openJarvisWindow());
+  ipcMain.handle("transcribe-audio", (_event, payload) => transcribeAudio(payload));
   ipcMain.handle("open-url", (_event, url) => shell.openExternal(String(url)));
   const config = await configState();
   send("desktop-state", { ...config, startOnLogin: Boolean(preferences.startOnLogin) });

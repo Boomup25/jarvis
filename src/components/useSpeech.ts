@@ -18,6 +18,14 @@ type SpeechRecognitionLike = {
   onend: (() => void) | null;
 };
 
+type DesktopVoiceBridge = {
+  transcribeAudio: (payload: { samples: Float32Array; sampleRate: number }) => Promise<{
+    ok: boolean;
+    text?: string;
+    error?: string;
+  }>;
+};
+
 function getRecognitionCtor(): (new () => SpeechRecognitionLike) | null {
   if (typeof window === "undefined") return null;
   const w = window as any;
@@ -44,6 +52,26 @@ export function isMobile(): boolean {
  * user's internet connection. */
 export function isElectron(): boolean {
   return typeof navigator !== "undefined" && /\bElectron\/\d/i.test(navigator.userAgent);
+}
+
+function getDesktopVoiceBridge(): DesktopVoiceBridge | null {
+  if (typeof window === "undefined") return null;
+  return (window as Window & { jarvisDesktopVoice?: DesktopVoiceBridge }).jarvisDesktopVoice ?? null;
+}
+
+function downsampleAudio(input: Float32Array, fromRate: number, toRate = 16_000): Float32Array {
+  if (fromRate === toRate) return input;
+  const ratio = fromRate / toRate;
+  const length = Math.max(1, Math.round(input.length / ratio));
+  const output = new Float32Array(length);
+  for (let i = 0; i < length; i++) {
+    const position = i * ratio;
+    const left = Math.floor(position);
+    const right = Math.min(input.length - 1, left + 1);
+    const fraction = position - left;
+    output[i] = input[left] * (1 - fraction) + input[right] * fraction;
+  }
+  return output;
 }
 
 /** Turn a SpeechRecognition error code into something a human can act on. */
@@ -113,6 +141,17 @@ export function useSpeechInput(
   const [activityAt, setActivityAt] = useState(0);
 
   const recRef = useRef<SpeechRecognitionLike | null>(null);
+  const desktopRecorderRef = useRef<MediaRecorder | null>(null);
+  const desktopStreamRef = useRef<MediaStream | null>(null);
+  const desktopMonitorRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const desktopAudioContextRef = useRef<AudioContext | null>(null);
+  const desktopChunksRef = useRef<Blob[]>([]);
+  const desktopGenerationRef = useRef(0);
+  const desktopSubmitRef = useRef(false);
+  const desktopStartedAtRef = useRef(0);
+  const desktopLastSoundRef = useRef(0);
+  const desktopHeardRef = useRef(false);
+  const desktopStartRef = useRef<(() => void) | null>(null);
   const transcriptRef = useRef("");
   const lastSoundRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -135,13 +174,17 @@ export function useSpeechInput(
   keepAliveRef.current = opts?.keepAlive ?? false;
 
   useEffect(() => {
-    setSupported(Boolean(getRecognitionCtor()));
+    setSupported(Boolean(getRecognitionCtor() || getDesktopVoiceBridge()));
     setSilenceMsState(readSilenceMs());
     return () => {
       stoppingRef.current = true;
       if (timerRef.current) clearInterval(timerRef.current);
       if (respawnRef.current) clearTimeout(respawnRef.current);
       recRef.current?.abort();
+      desktopMonitorRef.current && clearInterval(desktopMonitorRef.current);
+      desktopRecorderRef.current?.stop();
+      desktopStreamRef.current?.getTracks().forEach((track) => track.stop());
+      void desktopAudioContextRef.current?.close();
     };
   }, []);
 
@@ -174,7 +217,175 @@ export function useSpeechInput(
         /* already dead */
       }
     }
+    if (desktopMonitorRef.current) {
+      clearInterval(desktopMonitorRef.current);
+      desktopMonitorRef.current = null;
+    }
+    desktopSubmitRef.current = false;
+    const desktopRecorder = desktopRecorderRef.current;
+    desktopRecorderRef.current = null;
+    if (desktopRecorder && desktopRecorder.state !== "inactive") {
+      try {
+        desktopRecorder.ondataavailable = null;
+        desktopRecorder.onstop = null;
+        desktopRecorder.stop();
+      } catch {
+        /* already stopped */
+      }
+    }
+    desktopStreamRef.current?.getTracks().forEach((track) => track.stop());
+    desktopStreamRef.current = null;
+    void desktopAudioContextRef.current?.close();
+    desktopAudioContextRef.current = null;
+    desktopChunksRef.current = [];
   }, []);
+
+  /** Desktop Electron path: record locally, detect the end of an utterance,
+   * and send PCM samples to the bundled Whisper runtime through the isolated
+   * preload bridge. This avoids Chromium's unsupported online recognizer. */
+  const stopDesktop = useCallback((submit: boolean) => {
+    const recorder = desktopRecorderRef.current;
+    if (!recorder) {
+      setListening(false);
+      setInterim("");
+      return;
+    }
+    desktopSubmitRef.current = submit;
+    if (recorder.state !== "inactive") {
+      try {
+        recorder.stop();
+      } catch {
+        /* already stopped */
+      }
+    }
+  }, []);
+
+  const startDesktop = useCallback(async () => {
+    const bridge = getDesktopVoiceBridge();
+    if (!bridge) return;
+
+    desktopStartRef.current = startDesktop;
+    teardown();
+    const generation = desktopGenerationRef.current + 1;
+    desktopGenerationRef.current = generation;
+    setError(null);
+    setInterim("Listening…");
+    setListening(true);
+    desktopStartedAtRef.current = Date.now();
+    desktopLastSoundRef.current = Date.now();
+    desktopHeardRef.current = false;
+
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+    } catch (error) {
+      if (desktopGenerationRef.current !== generation) return;
+      setListening(false);
+      setInterim("");
+      setError(error instanceof DOMException && error.name === "NotAllowedError"
+        ? "Microphone access was denied. Allow microphone access for JARVIS in Windows, then try again."
+        : "JARVIS could not open the microphone.");
+      return;
+    }
+    if (desktopGenerationRef.current !== generation) {
+      stream.getTracks().forEach((track) => track.stop());
+      return;
+    }
+
+    desktopStreamRef.current = stream;
+    const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+      ? "audio/webm;codecs=opus"
+      : "audio/webm";
+    const recorder = new MediaRecorder(stream, { mimeType });
+    desktopRecorderRef.current = recorder;
+    desktopChunksRef.current = [];
+
+    recorder.ondataavailable = (event) => {
+      if (event.data.size) desktopChunksRef.current.push(event.data);
+    };
+    recorder.onstop = async () => {
+      if (desktopGenerationRef.current !== generation) return;
+      if (desktopMonitorRef.current) {
+        clearInterval(desktopMonitorRef.current);
+        desktopMonitorRef.current = null;
+      }
+      desktopRecorderRef.current = null;
+      desktopStreamRef.current?.getTracks().forEach((track) => track.stop());
+      desktopStreamRef.current = null;
+      void desktopAudioContextRef.current?.close();
+      desktopAudioContextRef.current = null;
+      // Keep the hook busy while Whisper is decoding so the conversation loop
+      // does not reopen a second recorder during transcription.
+      setListening(true);
+      setInterim("Transcribing…");
+
+      const shouldSubmit = desktopSubmitRef.current;
+      desktopSubmitRef.current = false;
+      const chunks = desktopChunksRef.current;
+      desktopChunksRef.current = [];
+      if (!shouldSubmit) {
+        setListening(false);
+        setInterim("");
+        if (keepAliveRef.current) desktopStartRef.current = startDesktop;
+        if (keepAliveRef.current) setTimeout(() => desktopStartRef.current?.(), 250);
+        return;
+      }
+
+      try {
+        const decodeContext = new AudioContext();
+        const decoded = await decodeContext.decodeAudioData(await new Blob(chunks, { type: mimeType }).arrayBuffer());
+        const channel = decoded.getChannelData(0);
+        const mono = new Float32Array(channel);
+        const samples = downsampleAudio(mono, decoded.sampleRate);
+        await decodeContext.close();
+        if (desktopGenerationRef.current !== generation) return;
+        const result = await bridge.transcribeAudio({ samples, sampleRate: 16_000 });
+        if (!result.ok) throw new Error(result.error || "No transcription returned.");
+        const text = String(result.text || "").trim();
+        setListening(false);
+        setInterim("");
+        if (text) finalRef.current(text);
+        else if (keepAliveRef.current) setTimeout(() => desktopStartRef.current?.(), 250);
+      } catch (error) {
+        if (desktopGenerationRef.current !== generation) return;
+        setListening(false);
+        setInterim("");
+        setError(error instanceof Error ? error.message : "Desktop transcription failed.");
+      }
+    };
+
+    recorder.start(250);
+    const audioContext = new AudioContext();
+    const source = audioContext.createMediaStreamSource(stream);
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 1024;
+    source.connect(analyser);
+    desktopAudioContextRef.current = audioContext;
+    const samples = new Uint8Array(analyser.fftSize);
+    desktopMonitorRef.current = setInterval(() => {
+      if (desktopGenerationRef.current !== generation || desktopRecorderRef.current !== recorder) return;
+      analyser.getByteTimeDomainData(samples);
+      let sum = 0;
+      for (const value of samples) {
+        const normalized = (value - 128) / 128;
+        sum += normalized * normalized;
+      }
+      const rms = Math.sqrt(sum / samples.length);
+      const now = Date.now();
+      if (rms > 0.035) {
+        desktopHeardRef.current = true;
+        desktopLastSoundRef.current = now;
+        setActivityAt((prev) => (now - prev > 90 ? now : prev));
+      }
+      const quietFor = now - desktopLastSoundRef.current;
+      const maxWait = Math.max(10_000, readSilenceMs() * 4);
+      if ((desktopHeardRef.current && quietFor >= readSilenceMs()) || (!desktopHeardRef.current && now - desktopStartedAtRef.current >= maxWait)) {
+        stopDesktop(desktopHeardRef.current);
+      }
+    }, 100);
+  }, [stopDesktop, teardown]);
 
   const finish = useCallback(
     (submit: boolean) => {
@@ -190,12 +401,28 @@ export function useSpeechInput(
 
   const cancel = useCallback(() => {
     setError(null);
+    if (isElectron() && getDesktopVoiceBridge()) {
+      teardown();
+      setListening(false);
+      setInterim("");
+      return;
+    }
     finish(false);
-  }, [finish]);
+  }, [finish, teardown]);
 
-  const stop = useCallback(() => finish(true), [finish]);
+  const stop = useCallback(() => {
+    if (isElectron() && getDesktopVoiceBridge()) {
+      stopDesktop(true);
+      return;
+    }
+    finish(true);
+  }, [finish, stopDesktop]);
 
   const start = useCallback(() => {
+    if (isElectron() && getDesktopVoiceBridge()) {
+      void startDesktop();
+      return;
+    }
     teardown(); // Never leave a second recognizer holding the microphone.
     const Ctor = getRecognitionCtor();
     if (!Ctor) {
@@ -303,7 +530,7 @@ export function useSpeechInput(
         finish(false);
       }
     }, 250);
-  }, [finish, teardown]);
+  }, [finish, startDesktop, teardown]);
 
   return {
     supported,

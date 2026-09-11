@@ -37,6 +37,8 @@ scratch/
 
 # misc
 desktop/dist/
+desktop/*.exe
+desktop/*.blockmap
 *.tsbuildinfo
 .DS_Store
 Thumbs.db
