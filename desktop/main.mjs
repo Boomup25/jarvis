@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, nativeImage, safeStorage, shell } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, nativeImage, safeStorage, screen, shell } from "electron";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
@@ -14,6 +14,7 @@ const configModuleUrl = pathToFileURL(configModulePath).href;
 
 let windowRef;
 let jarvisWindow = null;
+let orbWindow = null;
 let bridgeProcess = null;
 let bridgeState = "stopped";
 let preferences = {};
@@ -172,6 +173,7 @@ async function openJarvisWindow() {
   if (jarvisWindow && !jarvisWindow.isDestroyed()) {
     jarvisWindow.show();
     jarvisWindow.focus();
+    hideOrbWindow();
     return { ok: true };
   }
 
@@ -188,13 +190,20 @@ async function openJarvisWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      backgroundThrottling: false,
     },
   });
   const jarvisSession = jarvisWindow.webContents.session;
-  jarvisSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-    callback(permission === "media");
+  allowMicrophone(jarvisSession);
+  jarvisWindow.on("minimize", (event) => {
+    event.preventDefault();
+    // Stop the page recorder before handing the microphone to the orb.
+    void jarvisWindow?.webContents.executeJavaScript("window.dispatchEvent(new Event('jarvis-desktop-suspend'))").catch(() => {});
+    jarvisWindow?.hide();
+    showOrbWindow();
   });
-  jarvisSession.setPermissionCheckHandler((_webContents, permission) => permission === "media");
+  jarvisWindow.on("show", hideOrbWindow);
+  jarvisWindow.on("restore", hideOrbWindow);
   jarvisWindow.on("closed", () => { jarvisWindow = null; });
   jarvisWindow.webContents.on("did-fail-load", (_event, code, description, failedUrl, isMainFrame) => {
     if (!isMainFrame || !windowRef || windowRef.isDestroyed()) return;
@@ -212,6 +221,96 @@ async function openJarvisWindow() {
     jarvisWindow = null;
     return { ok: false, error: `Could not open JARVIS: ${error?.message ?? error}` };
   }
+}
+
+function allowMicrophone(session) {
+  session.setPermissionRequestHandler((_webContents, permission, callback) => {
+    callback(permission === "media");
+  });
+  session.setPermissionCheckHandler((_webContents, permission) => permission === "media");
+}
+
+function positionOrbWindow() {
+  if (!orbWindow || orbWindow.isDestroyed()) return;
+  const { workArea } = screen.getPrimaryDisplay();
+  const margin = 22;
+  const [width, height] = orbWindow.getSize();
+  orbWindow.setPosition(workArea.x + workArea.width - width - margin, workArea.y + workArea.height - height - margin, false);
+}
+
+function createOrbWindow() {
+  if (orbWindow && !orbWindow.isDestroyed()) return orbWindow;
+  orbWindow = new BrowserWindow({
+    width: 104,
+    height: 104,
+    minWidth: 104,
+    minHeight: 104,
+    maxWidth: 104,
+    maxHeight: 104,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    show: false,
+    hasShadow: false,
+    backgroundColor: "#00000000",
+    title: "JARVIS",
+    webPreferences: {
+      preload: join(__dirname, "voice-preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      backgroundThrottling: false,
+    },
+  });
+  allowMicrophone(orbWindow.webContents.session);
+  orbWindow.on("closed", () => { orbWindow = null; });
+  orbWindow.loadFile(join(__dirname, "renderer", "orb.html"));
+  orbWindow.webContents.once("did-finish-load", () => {
+    positionOrbWindow();
+    orbWindow?.webContents.send("orb-control", "start");
+  });
+  return orbWindow;
+}
+
+function showOrbWindow() {
+  const orb = createOrbWindow();
+  positionOrbWindow();
+  orb.showInactive();
+  orb.webContents.send("orb-control", "start");
+}
+
+function hideOrbWindow() {
+  if (!orbWindow || orbWindow.isDestroyed()) return;
+  orbWindow.webContents.send("orb-control", "stop");
+  orbWindow.hide();
+}
+
+async function dispatchWakeToJarvis(text) {
+  const cleanText = String(text ?? "").trim();
+  if (!cleanText) return { ok: false, error: "No wake phrase was captured." };
+  const opened = await openJarvisWindow();
+  if (!opened.ok || !jarvisWindow || jarvisWindow.isDestroyed()) return opened;
+
+  hideOrbWindow();
+  jarvisWindow.show();
+  jarvisWindow.focus();
+  const eventScript = `window.dispatchEvent(new CustomEvent("jarvis-desktop-wake", { detail: ${JSON.stringify({ text: cleanText })} }));`;
+  const currentUrl = jarvisWindow.webContents.getURL();
+  if (/\/chat(?:[/?#]|$)/i.test(currentUrl)) {
+    await jarvisWindow.webContents.executeJavaScript(eventScript).catch(() => {});
+    return { ok: true };
+  }
+
+  const target = new URL(currentUrl || "http://localhost");
+  target.pathname = "/chat";
+  target.search = "";
+  target.hash = "";
+  await jarvisWindow.loadURL(target.toString());
+  await jarvisWindow.webContents.executeJavaScript(eventScript).catch(() => {});
+  return { ok: true };
 }
 
 async function transcribeAudio(payload) {
@@ -297,6 +396,16 @@ app.whenReady().then(async () => {
     return { ok: true };
   });
   ipcMain.handle("open-jarvis", () => openJarvisWindow());
+  ipcMain.handle("restore-jarvis", async () => {
+    const result = await openJarvisWindow();
+    if (result.ok && jarvisWindow && !jarvisWindow.isDestroyed()) {
+      jarvisWindow.show();
+      jarvisWindow.focus();
+    }
+    hideOrbWindow();
+    return result;
+  });
+  ipcMain.handle("wake-jarvis", (_event, text) => dispatchWakeToJarvis(String(text ?? "")));
   ipcMain.handle("transcribe-audio", (_event, payload) => transcribeAudio(payload));
   ipcMain.handle("open-url", (_event, url) => shell.openExternal(String(url)));
   const config = await configState();

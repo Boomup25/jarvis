@@ -563,6 +563,29 @@ export function ChatView({
     setSession("active");
   }, [voice, micLevel, endConversation, setSession]);
 
+  // The minimized Electron orb sends wake phrases back into the live page.
+  // Restoring the page and starting the session here keeps the normal chat,
+  // history, streaming response, and JARVIS voice path in one place.
+  useEffect(() => {
+    const onDesktopWake = (event: Event) => {
+      const text = String((event as CustomEvent<{ text?: string }>).detail?.text ?? "").trim();
+      if (!text) return;
+      const request = text.replace(/^\s*(?:(?:hey|okay|ok)\s+)?jarvis\b[\s,:-]*/i, "").trim();
+      unlockRef.current();
+      closingRef.current = false;
+      setClosing(false);
+      setSession("active");
+      if (request) void send(request);
+    };
+    const onDesktopSuspend = () => micCancelRef.current();
+    window.addEventListener("jarvis-desktop-wake", onDesktopWake);
+    window.addEventListener("jarvis-desktop-suspend", onDesktopSuspend);
+    return () => {
+      window.removeEventListener("jarvis-desktop-wake", onDesktopWake);
+      window.removeEventListener("jarvis-desktop-suspend", onDesktopSuspend);
+    };
+  }, [send, setSession]);
+
   // Escape ends the conversation.
   useEffect(() => {
     if (!armed) return;

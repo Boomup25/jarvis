@@ -1,0 +1,94 @@
+:root {
+  color-scheme: dark;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+body { -webkit-app-region: drag; }
+
+#orb {
+  position: relative;
+  width: 104px;
+  height: 104px;
+  border: 0;
+  padding: 0;
+  color: #b8eeff;
+  background: transparent;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.ring, .core {
+  position: absolute;
+  inset: 11px;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.ring-one {
+  border: 1px solid rgba(58, 210, 255, .75);
+  box-shadow: 0 0 18px rgba(30, 190, 255, .42), inset 0 0 15px rgba(30, 190, 255, .16);
+  animation: breathe 2.2s ease-in-out infinite;
+}
+
+.ring-two {
+  inset: 18px;
+  border: 1px solid rgba(97, 229, 255, .28);
+  animation: spin 7s linear infinite;
+}
+
+.core {
+  inset: 31px;
+  background: radial-gradient(circle at 42% 38%, #ecfbff 0 8%, #66dcfa 26%, #1985b2 54%, #082133 76%, rgba(2, 10, 18, .2) 100%);
+  box-shadow: 0 0 23px rgba(53, 211, 255, .9), 0 0 48px rgba(17, 135, 203, .48);
+}
+
+.spark {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  top: 8px;
+  left: 10px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 9px #fff;
+}
+
+.status {
+  position: absolute;
+  left: 50%;
+  bottom: -1px;
+  transform: translateX(-50%);
+  padding: 2px 5px;
+  border-radius: 4px;
+  color: rgba(201, 242, 255, .75);
+  background: rgba(3, 12, 21, .82);
+  font-size: 8px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity .2s ease;
+}
+
+#orb:hover .status { opacity: 1; }
+
+#orb.transcribing .ring-one, #orb.speaking .ring-one {
+  animation: breathe .75s ease-in-out infinite;
+  box-shadow: 0 0 25px rgba(114, 230, 255, .8), inset 0 0 20px rgba(30, 190, 255, .3);
+}
+
+#orb.transcribing .core { animation: pulse .55s ease-in-out infinite alternate; }
+
+@keyframes breathe { 0%, 100% { transform: scale(.94); opacity: .7; } 50% { transform: scale(1.04); opacity: 1; } }
+@keyframes pulse { from { transform: scale(.92); } to { transform: scale(1.09); } }
+@keyframes spin { to { transform: rotate(360deg); } }
