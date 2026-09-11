@@ -360,6 +360,8 @@ export function ChatView({
             state={orbState}
             level={micLevel.level}
             activityAt={mic.activityAt}
+            onPress={mic.supported && !busy && !mic.listening ? startVoice : undefined}
+            pressLabel="Talk to JARVIS"
             className="size-11 shrink-0"
           />
 
@@ -422,7 +424,12 @@ export function ChatView({
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <div className="mx-auto flex min-h-full max-w-lg flex-col px-4 py-4">
           {messages.length === 0 && (
-            <EmptyState orbState={orbState} level={micLevel.level} activityAt={mic.activityAt} />
+            <EmptyState
+              orbState={orbState}
+              level={micLevel.level}
+              activityAt={mic.activityAt}
+              onPress={mic.supported && !busy && !mic.listening ? startVoice : undefined}
+            />
           )}
 
           <ul className="space-y-5">
@@ -777,20 +784,30 @@ function EmptyState({
   orbState,
   level,
   activityAt,
+  onPress,
 }: {
   orbState: OrbState;
   level: number;
   activityAt: number;
+  onPress?: () => void;
 }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center pb-8 text-center">
       <Reticle>
-        <ReactorOrb state={orbState} level={level} activityAt={activityAt} className="size-40" />
+        <ReactorOrb
+          state={orbState}
+          level={level}
+          activityAt={activityAt}
+          onPress={onPress}
+          className="size-40"
+        />
       </Reticle>
       <p className="readout mt-6">System ready</p>
       <p className="mt-2 text-[1rem] text-frost">At your service.</p>
       <p className="mx-auto mt-1.5 max-w-[17rem] text-[0.8rem] leading-snug text-mist">
-        Ask for a workout or a recipe — I&apos;ll save it to a page you can come back to.
+        {onPress
+          ? "Tap the reactor to speak, or type below."
+          : "Ask for a workout or a recipe — I'll save it to a page you can come back to."}
       </p>
     </div>
   );

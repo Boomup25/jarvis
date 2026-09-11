@@ -13,7 +13,10 @@
  */
 
 import { prisma } from "@/lib/db";
-import { guard } from "@/lib/session";
+import { requireUser } from "@/lib/session";
+import { rateLimit, clientKey, tooMany } from "@/lib/ratelimit";
+import { quotaFor, recordUsage } from "@/lib/users";
+import { logEvent } from "@/lib/logger";
 import { buildSystemPrompt } from "@/lib/prompt";
 import { streamChat, discoverVisionModels, type ChatMessage, type ToolCall } from "@/lib/openrouter";
 import { runTool, toolSchemas } from "@/lib/tools";
@@ -30,8 +33,27 @@ const MAX_TOOL_ROUNDS = 4;
 const HISTORY_LIMIT = 20;
 
 export async function POST(req: Request) {
-  const denied = await guard();
-  if (denied) return denied;
+  const auth = await requireUser();
+  if ("denied" in auth) return auth.denied;
+  const { user } = auth;
+  const userId = user.id;
+
+  // Two ceilings: a burst limit so nobody can hammer the endpoint, and a
+  // monthly quota so an invited friend can't run up an unbounded bill on the
+  // owner's OpenRouter key.
+  const burst = rateLimit(clientKey(req, `chat:${userId}`), { limit: 30, windowMs: 5 * 60_000 });
+  if (!burst.ok) return tooMany(burst, "Slow down a moment.");
+
+  const quota = await quotaFor(user, "chat");
+  if (quota.exceeded) {
+    return Response.json(
+      {
+        error: `You've used all ${quota.limit} messages for this month.`,
+        quota,
+      },
+      { status: 429 }
+    );
+  }
 
   let body: {
     message?: string;
@@ -48,7 +70,7 @@ export async function POST(req: Request) {
     return Response.json({ error: "Bad request" }, { status: 400 });
   }
 
-  const userText = String(body.message ?? "").trim();
+  const userText = String(body.message ?? "").trim().slice(0, 8000);
   const image = typeof body.image === "string" && body.image.startsWith("data:image/") ? body.image : null;
 
   if (!userText && !image) return Response.json({ error: "Empty message" }, { status: 400 });
@@ -58,14 +80,16 @@ export async function POST(req: Request) {
     return Response.json({ error: "Image too large" }, { status: 413 });
   }
 
+  // findFirst with userId, not findUnique by id — otherwise someone could
+  // resume a conversation belonging to another account by guessing its id.
   const conversation = body.conversationId
-    ? await prisma.conversation.findUnique({ where: { id: body.conversationId } })
+    ? await prisma.conversation.findFirst({ where: { id: body.conversationId, userId } })
     : null;
 
   const convo =
     conversation ??
     (await prisma.conversation.create({
-      data: { title: userText.slice(0, 60) },
+      data: { userId, title: userText.slice(0, 60) || "Photo" },
     }));
 
   await prisma.message.create({
@@ -92,7 +116,7 @@ export async function POST(req: Request) {
       try {
         // Deterministic pre-check: surface existing pages before the model
         // even starts, so the UI can show "you already have this".
-        const matches = await findSimilarPages(userText, { limit: 4 });
+        const matches = await findSimilarPages(userId, userText, { limit: 4 });
         if (matches.length) {
           send({
             type: "match",
@@ -106,11 +130,11 @@ export async function POST(req: Request) {
           });
         }
 
-        const { content: systemPrompt } = await buildSystemPrompt(userText);
+        const { content: systemPrompt } = await buildSystemPrompt(userId, userText);
 
         // A model picked in the UI leads; the free chain stays behind it so a
         // rate-limited or retired choice still produces an answer.
-        const settings = await getSettings();
+        const settings = await getSettings(userId);
         let chain = body.models?.length ? body.models : resolveChain(settings.model);
 
         // A photo needs a model that can actually see it. The free default
@@ -181,7 +205,10 @@ export async function POST(req: Request) {
 
           for (const call of result.toolCalls as ToolCall[]) {
             send({ type: "tool_start", name: call.function.name });
-            const toolResult = await runTool(call.function.name, call.function.arguments, { emit: send });
+            const toolResult = await runTool(call.function.name, call.function.arguments, {
+              userId,
+              emit: send,
+            });
             messages.push({
               role: "tool",
               tool_call_id: call.id,
@@ -204,19 +231,26 @@ export async function POST(req: Request) {
           },
         });
 
-        await prisma.conversation.update({
-          where: { id: convo.id },
+        await prisma.conversation.updateMany({
+          where: { id: convo.id, userId },
           data: { updatedAt: new Date() },
         });
 
-        send({ type: "done", conversationId: convo.id, messageId: assistantMessage.id });
+        void recordUsage(userId, "chat", usedModel);
+
+        send({
+          type: "done",
+          conversationId: convo.id,
+          messageId: assistantMessage.id,
+          quota: quota.unlimited ? null : { used: quota.used + 1, limit: quota.limit },
+        });
         controller.close();
 
         // After the client has its answer: learn from the exchange and, on the
         // first turn, give the conversation a real title.
         void (async () => {
           try {
-            await extractMemories(userText, finalText);
+            await extractMemories(userId, userText, finalText);
             if (!conversation) {
               const titled = await completeJson<{ title: string }>({
                 messages: [
@@ -231,8 +265,8 @@ export async function POST(req: Request) {
                 maxTokens: 60,
               });
               if (titled?.title) {
-                await prisma.conversation.update({
-                  where: { id: convo.id },
+                await prisma.conversation.updateMany({
+                  where: { id: convo.id, userId },
                   data: { title: String(titled.title).slice(0, 80) },
                 });
               }
@@ -242,6 +276,7 @@ export async function POST(req: Request) {
           }
         })();
       } catch (err) {
+        await logEvent("chat", "Turn failed", { detail: err });
         send({
           type: "error",
           message: err instanceof Error ? err.message : "Something went wrong upstream.",

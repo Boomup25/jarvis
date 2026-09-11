@@ -22,9 +22,9 @@ export type MemoryCategory = (typeof MEMORY_CATEGORIES)[number];
  * everything pinned or importance>=4, plus whatever the message looks like
  * it is about, plus a few recent ones.
  */
-export async function recallMemories(query: string, limit = 40) {
+export async function recallMemories(userId: string, query: string, limit = 40) {
   const all = await prisma.memory.findMany({
-    where: { active: true },
+    where: { userId, active: true },
     orderBy: [{ importance: "desc" }, { updatedAt: "desc" }],
     take: 400,
   });
@@ -55,6 +55,7 @@ export async function recallMemories(query: string, limit = 40) {
 
 /** Insert a memory, merging with a near-duplicate instead of piling up copies. */
 export async function rememberFact(input: {
+  userId: string;
   content: string;
   category?: string;
   importance?: number;
@@ -69,7 +70,7 @@ export async function rememberFact(input: {
   const importance = Math.min(5, Math.max(1, input.importance ?? 3));
 
   const candidates = await prisma.memory.findMany({
-    where: { active: true, category },
+    where: { userId: input.userId, active: true, category },
     orderBy: { updatedAt: "desc" },
     take: 120,
   });
@@ -87,7 +88,7 @@ export async function rememberFact(input: {
   }
 
   return prisma.memory.create({
-    data: { content, category, importance, source: input.source ?? "chat" },
+    data: { userId: input.userId, content, category, importance, source: input.source ?? "chat" },
   });
 }
 
@@ -101,7 +102,7 @@ interface ExtractedFact {
  * Background pass after a turn: pull durable facts out of what the user said.
  * Deliberately conservative — one-off requests are not memories.
  */
-export async function extractMemories(userText: string, assistantText: string) {
+export async function extractMemories(userId: string, userText: string, assistantText: string) {
   if (userText.trim().length < 12) return [];
 
   const messages: ChatMessage[] = [
@@ -139,6 +140,7 @@ Rules:
   for (const fact of result.facts.slice(0, 6)) {
     if (typeof fact?.content !== "string") continue;
     const mem = await rememberFact({
+      userId,
       content: fact.content,
       category: fact.category,
       importance: Number(fact.importance) || 3,

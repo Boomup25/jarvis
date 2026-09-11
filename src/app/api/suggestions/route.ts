@@ -1,4 +1,4 @@
-import { guard } from "@/lib/session";
+import { requireUser } from "@/lib/session";
 import { getProfile } from "@/lib/db";
 import { buildInsights } from "@/lib/insights";
 
@@ -12,10 +12,13 @@ export const dynamic = "force-dynamic";
  * rather than being a fixed list that stops being useful.
  */
 export async function GET() {
-  const denied = await guard();
-  if (denied) return denied;
+  const auth = await requireUser();
+  if ("denied" in auth) return auth.denied;
 
-  const [profile, insights] = await Promise.all([getProfile(), buildInsights()]);
+  const [profile, insights] = await Promise.all([
+    getProfile(auth.user.id),
+    buildInsights(auth.user.id),
+  ]);
   const hour = Number(
     new Intl.DateTimeFormat("en-US", {
       hour: "numeric",

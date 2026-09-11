@@ -13,19 +13,19 @@ export async function register() {
   if (process.env.DISABLE_SCHEDULER === "1") return;
 
   const cron = (await import("node-cron")).default;
-  const { runAgenda } = await import("./lib/agenda");
+  const { runAgendaForEveryone } = await import("./lib/agenda");
+  const { logEvent } = await import("./lib/logger");
 
   // Top of every hour. The rules themselves decide what's appropriate for the
   // current local hour, so the schedule stays dumb and the logic stays in one
   // place.
   cron.schedule("0 * * * *", async () => {
     try {
-      const sent = await runAgenda();
-      if (sent.length) {
-        console.log(`[agenda] sent ${sent.length}: ${sent.map((s) => s.kind).join(", ")}`);
-      }
+      const sent = await runAgendaForEveryone();
+      if (sent) console.log(`[agenda] sent ${sent} notification(s)`);
     } catch (err) {
-      console.error("[agenda] run failed:", err instanceof Error ? err.message : err);
+      // A silently dead scheduler is the worst outcome here, so this reports.
+      await logEvent("scheduler", "Hourly run failed", { detail: err, notify: true });
     }
   });
 

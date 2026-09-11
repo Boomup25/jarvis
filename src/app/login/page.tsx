@@ -1,12 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArcReactor } from "@/components/Icons";
+import { ReactorOrb } from "@/components/ReactorOrb";
 
 function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -19,7 +21,7 @@ function LoginForm() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ username, password }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -27,8 +29,7 @@ function LoginForm() {
         setBusy(false);
         return;
       }
-      router.replace(params.get("next") || "/");
-      router.refresh();
+      window.location.assign(params.get("next") || "/");
     } catch {
       setError("Could not reach the server.");
       setBusy(false);
@@ -36,29 +37,50 @@ function LoginForm() {
   }
 
   return (
-    <form onSubmit={submit} className="w-full max-w-xs space-y-5 text-center">
-      <ArcReactor className="mx-auto size-20 text-arc drop-shadow-[0_0_30px_var(--color-arc)]" />
+    <form onSubmit={submit} className="w-full max-w-xs space-y-4 text-center">
+      <ReactorOrb state="idle" className="mx-auto size-28" />
+
       <div>
         <h1 className="text-lg font-semibold tracking-[0.3em]">JARVIS</h1>
-        <p className="mt-1 text-[0.78rem] text-mist">Authentication required.</p>
+        <p className="readout mt-1">Authentication required</p>
       </div>
+
+      <input
+        value={username}
+        onChange={(e) => setUsername(e.target.value)}
+        placeholder="Username"
+        autoFocus
+        autoCapitalize="none"
+        autoCorrect="off"
+        autoComplete="username"
+        className="w-full border border-edge bg-void/60 px-4 py-3 text-center text-frost placeholder:text-mist/50 focus:border-arc/60 focus:outline-none"
+      />
+
       <input
         type="password"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
-        placeholder="Passphrase"
-        autoFocus
+        placeholder="Password"
         autoComplete="current-password"
-        className="w-full rounded-xl border border-edge bg-abyss/70 px-4 py-3 text-center tracking-widest text-frost placeholder:tracking-normal placeholder:text-mist/60 focus:border-arc/60 focus:outline-none"
+        className="w-full border border-edge bg-void/60 px-4 py-3 text-center tracking-widest text-frost placeholder:tracking-normal placeholder:text-mist/50 focus:border-arc/60 focus:outline-none"
       />
+
       {error && <p className="text-[0.8rem] text-ember">{error}</p>}
+
       <button
         type="submit"
-        disabled={busy || !password}
-        className="w-full rounded-xl bg-arc py-3 text-sm font-semibold text-void transition-opacity disabled:opacity-40"
+        disabled={busy || !username || !password}
+        className="notch-tr w-full bg-arc py-3 text-sm font-semibold text-void transition-opacity disabled:opacity-40"
       >
         {busy ? "Verifying…" : "Enter"}
       </button>
+
+      <p className="readout pt-2">
+        Have an invite?{" "}
+        <Link href="/signup" className="text-arc hover:underline">
+          Create an account
+        </Link>
+      </p>
     </form>
   );
 }
@@ -66,7 +88,7 @@ function LoginForm() {
 export default function LoginPage() {
   return (
     <main className="flex h-full items-center justify-center px-6">
-      <Suspense fallback={<ArcReactor className="size-20 text-arc" />}>
+      <Suspense fallback={<ReactorOrb state="idle" className="size-28" />}>
         <LoginForm />
       </Suspense>
     </main>

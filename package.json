@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && next build",
+    "build": "node scripts/audit-scoping.mjs && prisma generate && next build",
     "start": "prisma migrate deploy && next start",
     "start:local": "next start",
     "lint": "next lint",
@@ -17,7 +17,8 @@
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
     "postinstall": "prisma generate",
-    "db:copy": "tsx scripts/migrate-db.ts"
+    "db:copy": "tsx scripts/migrate-db.ts",
+    "audit": "node scripts/audit-scoping.mjs"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",

@@ -1,4 +1,4 @@
-import { guard } from "@/lib/session";
+import { requireUser } from "@/lib/session";
 import { listModels, isFree, supportsTools, type OpenRouterModel } from "@/lib/openrouter";
 import { modelChain, PROVIDER_LABELS, PINNED_PROVIDERS } from "@/lib/models";
 import { getSettings, saveSettings } from "@/lib/settings";
@@ -39,10 +39,10 @@ function toPicker(m: OpenRouterModel): PickerModel {
  * and a stale hardcoded chain is exactly what broke this app once already.
  */
 export async function GET() {
-  const denied = await guard();
-  if (denied) return denied;
+  const auth = await requireUser();
+  if ("denied" in auth) return auth.denied;
 
-  const settings = await getSettings();
+  const settings = await getSettings(auth.user.id);
   const chain = modelChain();
 
   try {
@@ -102,14 +102,14 @@ export async function GET() {
 
 /** Save the picked model. Empty string clears it back to the default chain. */
 export async function POST(req: Request) {
-  const denied = await guard();
-  if (denied) return denied;
+  const auth = await requireUser();
+  if ("denied" in auth) return auth.denied;
 
   const body = await req.json().catch(() => ({}));
   if (typeof body.model !== "string") {
     return Response.json({ error: "model must be a string" }, { status: 400 });
   }
 
-  const settings = await saveSettings({ model: body.model.trim() });
+  const settings = await saveSettings(auth.user.id, { model: body.model.trim() });
   return Response.json({ current: settings.model ?? null });
 }

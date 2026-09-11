@@ -5,34 +5,37 @@
  */
 
 import { prisma, getProfile } from "@/lib/db";
-import { guard } from "@/lib/session";
+import { requireUser } from "@/lib/session";
 import { completeJson } from "@/lib/openrouter";
 import { utilityModel } from "@/lib/models";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
-  const denied = await guard();
-  if (denied) return denied;
+  const auth = await requireUser();
+  if ("denied" in auth) return auth.denied;
+  const userId = auth.user.id;
 
   const skipGreeting = new URL(req.url).searchParams.get("quick") === "1";
-  const profile = await getProfile();
+  const profile = await getProfile(userId);
   const now = new Date();
   const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const weekAgo = new Date(Date.now() - 7 * 86_400_000);
 
   const [openTasks, dueToday, recentPages, weekLogs, memoryCount, pageCount] = await Promise.all([
-    prisma.task.findMany({ where: { done: false }, orderBy: [{ dueAt: "asc" }], take: 10 }),
-    prisma.task.count({ where: { done: false, dueAt: { lte: new Date(startOfDay.getTime() + 86_400_000) } } }),
+    prisma.task.findMany({ where: { userId, done: false }, orderBy: [{ dueAt: "asc" }], take: 10 }),
+    prisma.task.count({
+      where: { userId, done: false, dueAt: { lte: new Date(startOfDay.getTime() + 86_400_000) } },
+    }),
     prisma.page.findMany({
-      where: { archived: false },
+      where: { userId, archived: false },
       orderBy: { updatedAt: "desc" },
       take: 6,
       select: { slug: true, title: true, type: true, updatedAt: true },
     }),
-    prisma.logEntry.findMany({ where: { occurredAt: { gte: weekAgo } }, orderBy: { occurredAt: "desc" } }),
-    prisma.memory.count({ where: { active: true } }),
-    prisma.page.count({ where: { archived: false } }),
+    prisma.logEntry.findMany({ where: { userId, occurredAt: { gte: weekAgo } }, orderBy: { occurredAt: "desc" } }),
+    prisma.memory.count({ where: { userId, active: true } }),
+    prisma.page.count({ where: { userId, archived: false } }),
   ]);
 
   const workoutsThisWeek = weekLogs.filter((l) => l.kind === "workout").length;

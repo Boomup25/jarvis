@@ -1,14 +1,14 @@
 import { prisma } from "@/lib/db";
-import { guard } from "@/lib/session";
+import { requireUser } from "@/lib/session";
 import { rememberFact } from "@/lib/memory";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const denied = await guard();
-  if (denied) return denied;
+  const auth = await requireUser();
+  if ("denied" in auth) return auth.denied;
   const memories = await prisma.memory.findMany({
-    where: { active: true },
+    where: { userId: auth.user.id, active: true },
     orderBy: [{ pinned: "desc" }, { importance: "desc" }, { updatedAt: "desc" }],
     take: 500,
   });
@@ -16,10 +16,11 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const denied = await guard();
-  if (denied) return denied;
+  const auth = await requireUser();
+  if ("denied" in auth) return auth.denied;
   const body = await req.json().catch(() => ({}));
   const memory = await rememberFact({
+    userId: auth.user.id,
     content: String(body.content ?? ""),
     category: body.category,
     importance: Number(body.importance) || 3,

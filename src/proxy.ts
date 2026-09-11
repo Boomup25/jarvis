@@ -10,6 +10,8 @@ const PUBLIC = [
   "/manifest.webmanifest",
   "/icon.svg",
   "/sw.js",
+  "/signup",
+  "/api/auth/signup",
 ];
 
 export async function proxy(req: NextRequest) {

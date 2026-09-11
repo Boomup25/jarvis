@@ -88,8 +88,17 @@ npm run db:seed
 npm run dev
 ```
 
-Open <http://localhost:3000>. You'll get the login screen — type the
-`APP_PASSWORD` you chose. Then hit the **JARVIS** tab and try:
+Open <http://localhost:3000>. You'll get the login screen. Sign in as:
+
+| Username | Password |
+| --- | --- |
+| `owner` | the `APP_PASSWORD` you chose |
+
+The first time you do that, the app converts `APP_PASSWORD` into a proper scrypt
+hash stored on your account, and `APP_PASSWORD` stops being consulted. Change the
+password from Settings whenever you like; you never need to touch that env var again.
+
+Then hit the **JARVIS** tab and try:
 
 > Give me a push day workout. I've got dumbbells and a pull-up bar.
 
@@ -100,6 +109,21 @@ new one.
 
 Then check the **Memory** tab — it should have quietly learned that you own
 dumbbells and a pull-up bar.
+
+---
+
+## Giving it to a friend
+
+Accounts are invite-only — there's no open signup. As the owner:
+
+1. Open **/admin** (the shield icon on the dashboard).
+2. Type who it's for, hit **+**, and **Share** the code. That copies a link like
+   `https://your-app.up.railway.app/signup?code=ABCD-EFGH-JKLM`.
+3. They pick a username and password. Codes work once and expire after 14 days.
+
+They get their own memories, pages, tasks and history. Nobody can see anybody else's.
+Since your OpenRouter key pays for all of it, each account starts at 200 messages a
+month — change it per person on the same screen, or disable an account outright.
 
 ---
 

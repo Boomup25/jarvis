@@ -10,15 +10,21 @@ export const prisma =
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 
-export const PROFILE_ID = "me";
-
-export async function getProfile() {
-  const existing = await prisma.profile.findUnique({ where: { id: PROFILE_ID } });
+/**
+ * A user's profile, created on demand.
+ *
+ * Everything in the app is scoped by userId — there is no global state left,
+ * which is what stops one account seeing another's memories.
+ */
+export async function getProfile(userId: string) {
+  const existing = await prisma.profile.findUnique({ where: { userId } });
   if (existing) return existing;
+
+  const user = await prisma.user.findUnique({ where: { id: userId } });
   return prisma.profile.create({
     data: {
-      id: PROFILE_ID,
-      displayName: process.env.OWNER_NAME || "Sir",
+      userId,
+      displayName: user?.displayName || process.env.OWNER_NAME || "Sir",
       timezone: process.env.TZ || "America/Chicago",
     },
   });

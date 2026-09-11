@@ -19,6 +19,8 @@ export function ReactorOrb({
   state = "idle",
   level = 0,
   activityAt = 0,
+  onPress,
+  pressLabel = "Talk to JARVIS",
   className,
 }: {
   state?: OrbState;
@@ -30,12 +32,18 @@ export function ReactorOrb({
    * timestamp inside the animation loop keeps React out of the 60fps path.
    */
   activityAt?: number;
+  /** When set, the orb becomes a button — tap it to talk. */
+  onPress?: () => void;
+  /** Accessible label for the button form. */
+  pressLabel?: string;
   className?: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef<OrbState>(state);
   const levelRef = useRef(level);
   const activityRef = useRef(activityAt);
+  /** Timestamp of the last tap — drives the impact ripple. */
+  const pressRef = useRef(0);
 
   stateRef.current = state;
   levelRef.current = level;
@@ -131,6 +139,12 @@ export function ReactorOrb({
         default:
           target = 0.14 + Math.sin(t * 0.9) * 0.07; // breathing at rest
       }
+
+      // A tap throws a short, sharp impulse into the energy so the orb visibly
+      // reacts to being touched rather than just changing state a beat later.
+      const sincePress = t > 0 ? Date.now() - pressRef.current : Infinity;
+      const impulse = pressRef.current ? Math.max(0, 1 - sincePress / 420) : 0;
+      target += impulse * 0.75;
 
       smoothLevel += (levelRef.current - smoothLevel) * 0.25;
       smoothEnergy += (target - smoothEnergy) * (orbState === "listening" ? 0.32 : 0.09);
@@ -240,6 +254,16 @@ export function ReactorOrb({
         ctx.fill();
       }
 
+      // --- press ripple ---------------------------------------------------
+      if (impulse > 0.02) {
+        const ripple = 1 - impulse; // expands outward as the impulse decays
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius * (0.9 + ripple * 0.7), 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(140, 232, 255, ${impulse * 0.55})`;
+        ctx.lineWidth = 2 * impulse + 0.5;
+        ctx.stroke();
+      }
+
       // --- listening sweep ----------------------------------------------
       if (orbState === "listening" || orbState === "thinking") {
         const sweep = (t * (orbState === "thinking" ? 1.6 : 0.8)) % (Math.PI * 2);
@@ -260,20 +284,32 @@ export function ReactorOrb({
     };
   }, []);
 
+  const label =
+    state === "listening"
+      ? "Listening"
+      : state === "thinking"
+        ? "Thinking"
+        : state === "speaking"
+          ? "Speaking"
+          : "Idle";
+
+  const canvas = (
+    <canvas ref={canvasRef} className={onPress ? "size-full" : className} role="img" aria-label={label} />
+  );
+
+  if (!onPress) return canvas;
+
   return (
-    <canvas
-      ref={canvasRef}
-      className={className}
-      role="img"
-      aria-label={
-        state === "listening"
-          ? "Listening"
-          : state === "thinking"
-            ? "Thinking"
-            : state === "speaking"
-              ? "Speaking"
-              : "Idle"
-      }
-    />
+    <button
+      type="button"
+      aria-label={pressLabel}
+      onPointerDown={() => {
+        pressRef.current = Date.now();
+      }}
+      onClick={onPress}
+      className={`relative block cursor-pointer touch-manipulation transition-transform active:scale-95 ${className ?? ""}`}
+    >
+      {canvas}
+    </button>
   );
 }

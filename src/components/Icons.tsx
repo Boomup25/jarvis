@@ -149,6 +149,21 @@ export const SearchIcon = (p: P) => (
   </svg>
 );
 
+export const PeopleIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <circle cx="9" cy="8" r="3.2" />
+    <path d="M3.5 19.5c0-3 2.5-5 5.5-5s5.5 2 5.5 5" />
+    <path d="M16 5.6a3.2 3.2 0 0 1 0 6.3M17.5 14.8c2 .6 3.3 2.4 3.3 4.7" />
+  </svg>
+);
+
+export const LogoutIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M14.5 4.5h4.5v15h-4.5" />
+    <path d="M3.5 12h10.5M10.5 8.2 14.3 12l-3.8 3.8" />
+  </svg>
+);
+
 export const HistoryIcon = (p: P) => (
   <svg {...base} {...p}>
     <path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1" />

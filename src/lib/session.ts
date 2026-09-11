@@ -1,13 +1,35 @@
 import { cookies } from "next/headers";
-import { SESSION_COOKIE, verifySessionToken } from "./auth";
+import type { User } from "@prisma/client";
+import { SESSION_COOKIE, readSessionToken } from "./auth";
+import { prisma } from "./db";
 
-export async function isAuthed(): Promise<boolean> {
+/** The signed-in user, or null. Every scoped query starts here. */
+export async function currentUser(): Promise<User | null> {
   const jar = await cookies();
-  return verifySessionToken(jar.get(SESSION_COOKIE)?.value);
+  const userId = await readSessionToken(jar.get(SESSION_COOKIE)?.value);
+  if (!userId) return null;
+
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  return user && user.active ? user : null;
 }
 
-/** Returns a 401 Response when not signed in, otherwise null. */
+export async function isAuthed(): Promise<boolean> {
+  return (await currentUser()) !== null;
+}
+
+/**
+ * Route guard. Returns the user, or a Response to return immediately.
+ *
+ * Written this way so a handler physically cannot forget the check — you need
+ * the user object to do anything, and getting it is what enforces auth.
+ */
+export async function requireUser(): Promise<{ user: User } | { denied: Response }> {
+  const user = await currentUser();
+  if (!user) return { denied: Response.json({ error: "Not authenticated" }, { status: 401 }) };
+  return { user };
+}
+
+/** Back-compat for routes that only need a yes/no. */
 export async function guard(): Promise<Response | null> {
-  if (await isAuthed()) return null;
-  return Response.json({ error: "Not authenticated" }, { status: 401 });
+  return (await isAuthed()) ? null : Response.json({ error: "Not authenticated" }, { status: 401 });
 }

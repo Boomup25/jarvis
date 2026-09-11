@@ -1,21 +1,28 @@
-import { prisma, getProfile, PROFILE_ID } from "@/lib/db";
-import { guard } from "@/lib/session";
+import { prisma, getProfile } from "@/lib/db";
+import { requireUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const denied = await guard();
-  if (denied) return denied;
-  return Response.json({ profile: await getProfile() });
+  const auth = await requireUser();
+  if ("denied" in auth) return auth.denied;
+  return Response.json({
+    profile: await getProfile(auth.user.id),
+    account: {
+      username: auth.user.username,
+      displayName: auth.user.displayName,
+      role: auth.user.role,
+    },
+  });
 }
 
 export async function PATCH(req: Request) {
-  const denied = await guard();
-  if (denied) return denied;
-  await getProfile();
+  const auth = await requireUser();
+  if ("denied" in auth) return auth.denied;
+  await getProfile(auth.user.id);
   const body = await req.json().catch(() => ({}));
   const profile = await prisma.profile.update({
-    where: { id: PROFILE_ID },
+    where: { userId: auth.user.id },
     data: {
       ...(body.displayName !== undefined ? { displayName: String(body.displayName) } : {}),
       ...(body.assistantName !== undefined ? { assistantName: String(body.assistantName) } : {}),

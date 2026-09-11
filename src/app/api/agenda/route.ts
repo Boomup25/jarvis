@@ -1,17 +1,21 @@
-import { guard } from "@/lib/session";
-import { buildCandidates, runAgenda } from "@/lib/agenda";
+import { requireUser } from "@/lib/session";
+import { buildCandidates, runAgenda, runAgendaForEveryone } from "@/lib/agenda";
 import { prisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
 /** Preview: what would fire right now, plus what has already been sent. */
 export async function GET() {
-  const denied = await guard();
-  if (denied) return denied;
+  const auth = await requireUser();
+  if ("denied" in auth) return auth.denied;
 
   const [candidates, recent] = await Promise.all([
-    buildCandidates(),
-    prisma.notification.findMany({ orderBy: { createdAt: "desc" }, take: 20 }),
+    buildCandidates(auth.user.id),
+    prisma.notification.findMany({
+      where: { userId: auth.user.id },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    }),
   ]);
 
   return Response.json({ candidates, recent });
@@ -29,14 +33,16 @@ export async function POST(req: Request) {
   const header = req.headers.get("authorization");
   const viaCron = Boolean(secret && header === `Bearer ${secret}`);
 
-  if (!viaCron) {
-    const denied = await guard();
-    if (denied) return denied;
+  // Cron runs the rules for everyone; a signed-in user only ever runs their own.
+  if (viaCron) {
+    const count = await runAgendaForEveryone();
+    return Response.json({ sent: [], count });
   }
 
-  const url = new URL(req.url);
-  const force = url.searchParams.get("force") === "1";
+  const auth = await requireUser();
+  if ("denied" in auth) return auth.denied;
 
-  const sent = await runAgenda(new Date(), { force });
+  const force = new URL(req.url).searchParams.get("force") === "1";
+  const sent = await runAgenda(auth.user.id, new Date(), { force });
   return Response.json({ sent, count: sent.length });
 }

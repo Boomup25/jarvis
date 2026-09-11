@@ -181,8 +181,11 @@ export function SettingsSheet({
         className="absolute inset-0 bg-void/70 backdrop-blur-sm"
       />
 
-      <div className="relative flex max-h-[88dvh] flex-col rounded-t-2xl glass safe-bottom">
-        <div className="shrink-0 border-b border-edge px-4 pb-3 pt-3">
+      {/* One scroll container for the whole sheet. It used to have a shrink-0
+          header that new sections kept getting added to, which made them
+          unreachable — nothing to scroll them into view. */}
+      <div className="relative flex max-h-[88dvh] flex-col overflow-y-auto overscroll-contain border-t border-edge glass safe-bottom">
+        <div className="border-b border-edge px-4 pb-3 pt-3">
           <div className="mx-auto mb-3 h-1 w-9 rounded-full bg-edge" />
 
           <div className="mb-3">
@@ -286,7 +289,7 @@ export function SettingsSheet({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+        <div className="px-4 py-3">
           {loading && <p className="py-8 text-center text-[0.8rem] text-mist">Loading catalogue…</p>}
 
           {data?.error && (

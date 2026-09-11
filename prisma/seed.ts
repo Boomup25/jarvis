@@ -7,11 +7,19 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 async function main() {
+  // The multi-user migration creates the owner row; this just fills in a
+  // profile and a couple of starter memories for it.
+  const owner = await prisma.user.findFirst({ where: { role: "owner" } });
+  if (!owner) {
+    console.log("No owner user yet — run `prisma migrate deploy` first.");
+    return;
+  }
+
   await prisma.profile.upsert({
-    where: { id: "me" },
+    where: { userId: owner.id },
     update: {},
     create: {
-      id: "me",
+      userId: owner.id,
       displayName: process.env.OWNER_NAME || "Colin",
       assistantName: "JARVIS",
       timezone: process.env.TZ || "America/Chicago",
@@ -26,8 +34,12 @@ async function main() {
   ];
 
   for (const memory of starters) {
-    const exists = await prisma.memory.findFirst({ where: { content: memory.content } });
-    if (!exists) await prisma.memory.create({ data: { ...memory, source: "seed" } });
+    const exists = await prisma.memory.findFirst({
+      where: { userId: owner.id, content: memory.content },
+    });
+    if (!exists) {
+      await prisma.memory.create({ data: { ...memory, userId: owner.id, source: "seed" } });
+    }
   }
 
   console.log("Seeded profile and starter memories.");

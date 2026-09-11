@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
+import { currentUser } from "@/lib/session";
 import { PAGE_TYPES } from "@/lib/pages";
 import { PAGE_ICONS, LibraryIcon } from "@/components/Icons";
 
@@ -10,18 +12,21 @@ export default async function LibraryPage({
 }: {
   searchParams: Promise<{ type?: string }>;
 }) {
+  const user = await currentUser();
+  if (!user) redirect("/login");
+
   const { type } = await searchParams;
   const filter = PAGE_TYPES.includes(type as never) ? type : undefined;
 
   const pages = await prisma.page.findMany({
-    where: { archived: false, ...(filter ? { type: filter } : {}) },
+    where: { userId: user.id, archived: false, ...(filter ? { type: filter } : {}) },
     orderBy: [{ pinned: "desc" }, { updatedAt: "desc" }],
     take: 200,
   });
 
   const counts = await prisma.page.groupBy({
     by: ["type"],
-    where: { archived: false },
+    where: { userId: user.id, archived: false },
     _count: true,
   });
   const countFor = (t: string) => counts.find((c) => c.type === t)?._count ?? 0;

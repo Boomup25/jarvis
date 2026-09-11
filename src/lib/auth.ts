@@ -47,37 +47,46 @@ function safeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-export function checkPassword(input: string): boolean {
+/** The legacy single-password check, still used to bootstrap the owner. */
+export function checkLegacyPassword(input: string): boolean {
   const expected = process.env.APP_PASSWORD;
   if (!expected) return false;
   return safeEqual(input, expected);
 }
 
-export async function createSessionToken(): Promise<string> {
-  const payload = b64url(encoder.encode(JSON.stringify({ sub: "owner", iat: Date.now() })));
+export async function createSessionToken(userId: string): Promise<string> {
+  const payload = b64url(encoder.encode(JSON.stringify({ sub: userId, iat: Date.now() })));
   const sig = await sign(payload, secret());
   return `${payload}.${sig}`;
 }
 
-export async function verifySessionToken(token: string | undefined | null): Promise<boolean> {
-  if (!token) return false;
+/** Returns the user id the token belongs to, or null if it isn't valid. */
+export async function readSessionToken(token: string | undefined | null): Promise<string | null> {
+  if (!token) return null;
   const [payload, sig] = token.split(".");
-  if (!payload || !sig) return false;
+  if (!payload || !sig) return null;
+
   let expected: string;
   try {
     expected = await sign(payload, secret());
   } catch {
-    return false;
+    return null;
   }
-  if (!safeEqual(sig, expected)) return false;
+  if (!safeEqual(sig, expected)) return null;
+
   try {
     const data = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
-    if (typeof data.iat !== "number") return false;
-    if (Date.now() - data.iat > MAX_AGE_SECONDS * 1000) return false;
-    return true;
+    if (typeof data.iat !== "number" || typeof data.sub !== "string") return null;
+    if (Date.now() - data.iat > MAX_AGE_SECONDS * 1000) return null;
+    return data.sub;
   } catch {
-    return false;
+    return null;
   }
+}
+
+/** Convenience for the proxy, which only needs to know "is this signed in". */
+export async function verifySessionToken(token: string | undefined | null): Promise<boolean> {
+  return (await readSessionToken(token)) !== null;
 }
 
 export const sessionCookieOptions = {

@@ -1,14 +1,14 @@
 import { prisma } from "@/lib/db";
-import { guard } from "@/lib/session";
+import { requireUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
-  const denied = await guard();
-  if (denied) return denied;
+  const auth = await requireUser();
+  if ("denied" in auth) return auth.denied;
   const includeDone = new URL(req.url).searchParams.get("all") === "1";
   const tasks = await prisma.task.findMany({
-    where: includeDone ? {} : { done: false },
+    where: includeDone ? { userId: auth.user.id } : { userId: auth.user.id, done: false },
     orderBy: [{ done: "asc" }, { dueAt: "asc" }, { createdAt: "desc" }],
     take: 200,
   });
@@ -16,14 +16,15 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const denied = await guard();
-  if (denied) return denied;
+  const auth = await requireUser();
+  if ("denied" in auth) return auth.denied;
   const body = await req.json().catch(() => ({}));
   const title = String(body.title ?? "").trim();
   if (!title) return Response.json({ error: "title required" }, { status: 400 });
   const dueAt = body.dueAt ? new Date(String(body.dueAt)) : null;
   const task = await prisma.task.create({
     data: {
+      userId: auth.user.id,
       title,
       notes: String(body.notes ?? ""),
       dueAt: dueAt && !Number.isNaN(dueAt.getTime()) ? dueAt : null,

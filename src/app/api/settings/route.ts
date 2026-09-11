@@ -1,13 +1,13 @@
-import { guard } from "@/lib/session";
+import { requireUser } from "@/lib/session";
 import { getSettings, saveSettings, type Settings } from "@/lib/settings";
 import { VOICE_CATALOGUE, DEFAULT_VOICE_ID } from "@/lib/tts";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const denied = await guard();
-  if (denied) return denied;
-  const settings = await getSettings();
+  const auth = await requireUser();
+  if ("denied" in auth) return auth.denied;
+  const settings = await getSettings(auth.user.id);
   return Response.json({
     settings,
     voices: VOICE_CATALOGUE,
@@ -17,8 +17,8 @@ export async function GET() {
 }
 
 export async function PATCH(req: Request) {
-  const denied = await guard();
-  if (denied) return denied;
+  const auth = await requireUser();
+  if ("denied" in auth) return auth.denied;
 
   const body = await req.json().catch(() => ({}));
   const patch: Settings = {};
@@ -39,5 +39,5 @@ export async function PATCH(req: Request) {
     patch.lon = body.lon;
   }
 
-  return Response.json({ settings: await saveSettings(patch) });
+  return Response.json({ settings: await saveSettings(auth.user.id, patch) });
 }

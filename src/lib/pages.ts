@@ -19,11 +19,11 @@ export function normalizeType(input?: string | null): PageType {
 }
 
 /** Give a page a unique slug, suffixing -2, -3… if the base is taken. */
-export async function uniqueSlug(title: string, preferred?: string): Promise<string> {
+export async function uniqueSlug(userId: string, title: string, preferred?: string): Promise<string> {
   const base = slugify(preferred || title);
   let candidate = base;
   let n = 2;
-  while (await prisma.page.findUnique({ where: { slug: candidate }, select: { id: true } })) {
+  while (await prisma.page.findUnique({ where: { userId_slug: { userId, slug: candidate } }, select: { id: true } })) {
     candidate = `${base}-${n++}`;
     if (n > 50) return `${base}-${Date.now().toString(36)}`;
   }
@@ -39,9 +39,9 @@ export interface PageMatch {
  * The heart of "don't regenerate what you already made".
  * Scores every non-archived page against the user's message.
  */
-export async function findSimilarPages(query: string, opts?: { type?: string; limit?: number }): Promise<PageMatch[]> {
+export async function findSimilarPages(userId: string, query: string, opts?: { type?: string; limit?: number }): Promise<PageMatch[]> {
   const pages = await prisma.page.findMany({
-    where: { archived: false, ...(opts?.type ? { type: normalizeType(opts.type) } : {}) },
+    where: { userId, archived: false, ...(opts?.type ? { type: normalizeType(opts.type) } : {}) },
     orderBy: { updatedAt: "desc" },
     take: 500,
   });
@@ -67,9 +67,9 @@ export async function findSimilarPages(query: string, opts?: { type?: string; li
 export const STRONG_MATCH = 0.62;
 
 /** Compact index of the library, injected into every system prompt. */
-export async function pageIndex(limit = 120) {
+export async function pageIndex(userId: string, limit = 120) {
   const pages = await prisma.page.findMany({
-    where: { archived: false },
+    where: { userId, archived: false },
     orderBy: [{ pinned: "desc" }, { updatedAt: "desc" }],
     take: limit,
     select: { slug: true, title: true, type: true, tags: true, updatedAt: true },
@@ -77,10 +77,10 @@ export async function pageIndex(limit = 120) {
   return pages;
 }
 
-export async function touchPage(slug: string) {
+export async function touchPage(userId: string, slug: string) {
   return prisma.page
     .update({
-      where: { slug },
+      where: { userId_slug: { userId, slug } },
       data: { viewCount: { increment: 1 }, lastViewedAt: new Date() },
     })
     .catch(() => null);

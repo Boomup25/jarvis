@@ -10,6 +10,8 @@ import { webSearch } from "./openrouter";
 import type { ToolSchema } from "./openrouter";
 
 export interface ToolContext {
+  /** Whose data this tool may touch. Every query below is scoped to it. */
+  userId: string;
   /** Emitted to the client so the UI can render a card the moment it happens. */
   emit: (event: { type: string; [k: string]: unknown }) => void;
 }
@@ -61,13 +63,13 @@ const tools: Record<string, ToolDef> = {
       if (!title || !contentMd) return { ok: false, error: "title and content_md are required" };
 
       const type = normalizeType(args.type);
-      const slug = await uniqueSlug(title);
+      const slug = await uniqueSlug(ctx.userId, title);
       const tags = Array.isArray(args.tags)
         ? args.tags.map((t: unknown) => String(t).toLowerCase().trim()).filter(Boolean).slice(0, 8)
         : [];
 
       const page = await prisma.page.create({
-        data: { slug, type, title, summary: String(args.summary ?? "").trim(), contentMd, tags },
+        data: { userId: ctx.userId, slug, type, title, summary: String(args.summary ?? "").trim(), contentMd, tags },
       });
 
       ctx.emit({ type: "page_saved", slug: page.slug, title: page.title, pageType: page.type });
@@ -93,8 +95,8 @@ const tools: Record<string, ToolDef> = {
         },
       },
     },
-    handler: async (args) => {
-      const matches = await findSimilarPages(String(args.query ?? ""), { type: args.type, limit: 5 });
+    handler: async (args, ctx) => {
+      const matches = await findSimilarPages(ctx.userId, String(args.query ?? ""), { type: args.type, limit: 5 });
       return {
         ok: true,
         results: matches.map((m) => ({
@@ -133,11 +135,13 @@ const tools: Record<string, ToolDef> = {
     },
     handler: async (args, ctx) => {
       const slug = String(args.slug ?? "");
-      const existing = await prisma.page.findUnique({ where: { slug } });
+      const existing = await prisma.page.findUnique({
+        where: { userId_slug: { userId: ctx.userId, slug } },
+      });
       if (!existing) return { ok: false, error: `No page with slug "${slug}"` };
 
       const page = await prisma.page.update({
-        where: { slug },
+        where: { userId_slug: { userId: ctx.userId, slug } },
         data: {
           ...(args.title ? { title: String(args.title) } : {}),
           ...(args.summary ? { summary: String(args.summary) } : {}),
@@ -178,6 +182,7 @@ const tools: Record<string, ToolDef> = {
     },
     handler: async (args, ctx) => {
       const mem = await rememberFact({
+        userId: ctx.userId,
         content: String(args.content ?? ""),
         category: args.category,
         importance: Number(args.importance) || 3,
@@ -212,6 +217,7 @@ const tools: Record<string, ToolDef> = {
       const dueAt = args.due_at ? new Date(String(args.due_at)) : null;
       const task = await prisma.task.create({
         data: {
+          userId: ctx.userId,
           title,
           notes: String(args.notes ?? ""),
           dueAt: dueAt && !Number.isNaN(dueAt.getTime()) ? dueAt : null,
@@ -234,9 +240,9 @@ const tools: Record<string, ToolDef> = {
         },
       },
     },
-    handler: async (args) => {
+    handler: async (args, ctx) => {
       const tasks = await prisma.task.findMany({
-        where: args?.include_done ? {} : { done: false },
+        where: args?.include_done ? { userId: ctx.userId } : { userId: ctx.userId, done: false },
         orderBy: [{ done: "asc" }, { dueAt: "asc" }, { createdAt: "desc" }],
         take: 50,
       });
@@ -275,9 +281,15 @@ const tools: Record<string, ToolDef> = {
     handler: async (args, ctx) => {
       const kind = ["workout", "meal", "weight", "note"].includes(args?.kind) ? args.kind : "note";
       const slug = args.page_slug ? String(args.page_slug) : null;
-      const exists = slug ? await prisma.page.findUnique({ where: { slug }, select: { slug: true } }) : null;
+      const exists = slug
+        ? await prisma.page.findUnique({
+            where: { userId_slug: { userId: ctx.userId, slug } },
+            select: { slug: true },
+          })
+        : null;
       const entry = await prisma.logEntry.create({
         data: {
+          userId: ctx.userId,
           kind,
           pageSlug: exists?.slug ?? null,
           note: String(args.note ?? ""),
@@ -346,11 +358,15 @@ const tools: Record<string, ToolDef> = {
         },
       },
     },
-    handler: async (args) => {
+    handler: async (args, ctx) => {
       const days = Math.min(365, Math.max(1, Number(args?.days) || 14));
       const since = new Date(Date.now() - days * 86_400_000);
       const logs = await prisma.logEntry.findMany({
-        where: { occurredAt: { gte: since }, ...(args?.kind ? { kind: String(args.kind) } : {}) },
+        where: {
+          userId: ctx.userId,
+          occurredAt: { gte: since },
+          ...(args?.kind ? { kind: String(args.kind) } : {}),
+        },
         orderBy: { occurredAt: "desc" },
         take: 60,
       });

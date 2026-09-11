@@ -10,9 +10,11 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-/// Single-row table describing the owner. id is always "me".
+/// Per-user settings and identity. One row per User.
 model Profile {
-  id            String   @id @default("me")
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   displayName   String   @default("Sir")
   assistantName String   @default("JARVIS")
   timezone      String   @default("America/Chicago")
@@ -26,6 +28,8 @@ model Profile {
 
 /// Durable freeform facts JARVIS has learned. Retrieved and injected each turn.
 model Memory {
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   id         String    @id @default(cuid())
   content    String
   /// identity | fitness | food | preference | schedule | goal | relationship | work | general
@@ -40,15 +44,17 @@ model Memory {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
-  @@index([active, importance])
-  @@index([category])
+  @@index([userId, active, importance])
+  @@index([userId, category])
 }
 
 /// A generated, saved reference page: a workout, a recipe, a plan, a guide.
 /// This is the "don't regenerate, link to it" store.
 model Page {
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   id           String    @id @default(cuid())
-  slug         String    @unique
+  slug         String
   /// workout | recipe | plan | guide | note
   type         String    @default("note")
   title        String
@@ -64,20 +70,21 @@ model Page {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  logs LogEntry[]
-
-  @@index([type, archived])
-  @@index([archived, updatedAt])
+  @@unique([userId, slug])
+  @@index([userId, type, archived])
+  @@index([userId, archived, updatedAt])
 }
 
 model Conversation {
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   id        String    @id @default(cuid())
   title     String    @default("New conversation")
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   messages  Message[]
 
-  @@index([updatedAt])
+  @@index([userId, updatedAt])
 }
 
 model Message {
@@ -100,6 +107,8 @@ model Message {
 }
 
 model Task {
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   id          String    @id @default(cuid())
   title       String
   notes       String    @default("")
@@ -109,55 +118,137 @@ model Task {
   createdAt   DateTime  @default(now())
   completedAt DateTime?
 
-  @@index([done, dueAt])
+  @@index([userId, done, dueAt])
 }
 
 /// "I actually did this" tracking — workouts completed, meals eaten, weigh-ins.
 model LogEntry {
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   id         String   @id @default(cuid())
   /// workout | meal | weight | note
   kind       String
   pageSlug   String?
-  page       Page?    @relation(fields: [pageSlug], references: [slug], onDelete: SetNull)
   note       String   @default("")
   value      Json     @default("{}")
   occurredAt DateTime @default(now())
   createdAt  DateTime @default(now())
 
-  @@index([kind, occurredAt])
+  @@index([userId, kind, occurredAt])
 }
 
 /// A browser/device that has agreed to receive push notifications.
 model PushSubscription {
-  id        String   @id @default(cuid())
-  endpoint  String   @unique
-  p256dh    String
-  auth      String
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id         String    @id @default(cuid())
+  endpoint   String    @unique
+  p256dh     String
+  auth       String
   /// Rough device description, so you can tell two phones apart when revoking.
-  label     String   @default("")
-  active    Boolean  @default(true)
-  failures  Int      @default(0)
+  label      String    @default("")
+  active     Boolean   @default(true)
+  failures   Int       @default(0)
   lastSentAt DateTime?
-  createdAt DateTime @default(now())
+  createdAt  DateTime  @default(now())
 
-  @@index([active])
+  @@index([userId, active])
 }
 
 /// Everything JARVIS has pushed. Doubles as the dedupe key store — a rule that
 /// already fired today won't fire again.
 model Notification {
-  id        String   @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String    @id @default(cuid())
   /// brief | workout | task | weather | streak | stale | system
   kind      String
   /// Stable per-rule-per-window key, e.g. "workout:2026-09-11".
-  dedupeKey String   @unique
+  dedupeKey String
   title     String
   body      String
-  url       String   @default("/")
-  delivered Int      @default(0)
+  url       String    @default("/")
+  delivered Int       @default(0)
   readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, kind, createdAt])
+}
+
+/// Errors and notable events. JARVIS reports on itself rather than failing
+/// silently until you happen to open the app.
+model SystemEvent {
+  id        String   @id @default(cuid())
+  /// error | warn | info
+  level     String   @default("error")
+  /// Where it came from: chat | agenda | speak | push | auth | scheduler
+  source    String
+  message   String
+  detail    String   @default("")
+  notified  Boolean  @default(false)
   createdAt DateTime @default(now())
 
-  @@index([kind, createdAt])
+  @@index([level, createdAt])
+  @@index([createdAt])
+}
+
+/// An account. The first one created becomes the owner.
+model User {
+  id           String    @id @default(cuid())
+  username     String    @unique
+  displayName  String
+  passwordHash String
+  /// owner | member — owner can invite, see usage, and has no quota.
+  role         String    @default("member")
+  active       Boolean   @default(true)
+  /// Messages allowed per calendar month. 0 means unlimited.
+  monthlyQuota Int       @default(200)
+  createdAt    DateTime  @default(now())
+  lastSeenAt   DateTime?
+
+  profile           Profile?
+  memories          Memory[]
+  pages             Page[]
+  conversations     Conversation[]
+  tasks             Task[]
+  logs              LogEntry[]
+  pushSubscriptions PushSubscription[]
+  notifications     Notification[]
+  usage             UsageRecord[]
+  invites           InviteCode[]       @relation("InviteCreator")
+
+  @@index([active])
+}
+
+/// Signup is invite-only. Nobody gets an account without one of these.
+model InviteCode {
+  id             String    @id @default(cuid())
+  code           String    @unique
+  createdById    String
+  createdBy      User      @relation("InviteCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  usedByUsername String?
+  usedAt         DateTime?
+  note           String    @default("")
+  expiresAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([createdById])
+}
+
+/// One row per billable action, so quotas are auditable rather than a counter
+/// someone can argue with.
+model UsageRecord {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// chat | speak | search
+  kind      String
+  /// YYYY-MM — the quota window.
+  period    String
+  model     String   @default("")
+  createdAt DateTime @default(now())
+
+  @@index([userId, period, kind])
   @@index([createdAt])
 }

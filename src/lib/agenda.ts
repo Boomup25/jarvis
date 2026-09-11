@@ -42,11 +42,11 @@ export function inQuietHours(now: Date, tz: string, from: number, to: number): b
  * Builds every notification that *could* fire right now. The caller filters by
  * settings, quiet hours and dedupe.
  */
-export async function buildCandidates(now = new Date()): Promise<Candidate[]> {
+export async function buildCandidates(userId: string, now = new Date()): Promise<Candidate[]> {
   const [profile, settings, insights] = await Promise.all([
-    getProfile(),
-    getSettings(),
-    buildInsights(),
+    getProfile(userId),
+    getSettings(userId),
+    buildInsights(userId),
   ]);
 
   const tz = profile.timezone || "America/Chicago";
@@ -118,7 +118,11 @@ export async function buildCandidates(now = new Date()): Promise<Candidate[]> {
 
   // ---- tasks due today or overdue -------------------------------------
   const dueSoon = await prisma.task.findMany({
-    where: { done: false, dueAt: { not: null, lte: new Date(now.getTime() + 24 * 3600_000) } },
+    where: {
+      userId,
+      done: false,
+      dueAt: { not: null, lte: new Date(now.getTime() + 24 * 3600_000) },
+    },
     orderBy: { dueAt: "asc" },
     take: 3,
   });
@@ -140,8 +144,12 @@ export async function buildCandidates(now = new Date()): Promise<Candidate[]> {
  * Runs the rules and pushes whatever survives. Returns what was sent, so the
  * cron log and the manual "run now" button can report the same thing.
  */
-export async function runAgenda(now = new Date(), opts?: { force?: boolean }): Promise<Candidate[]> {
-  const [profile, settings] = await Promise.all([getProfile(), getSettings()]);
+export async function runAgenda(
+  userId: string,
+  now = new Date(),
+  opts?: { force?: boolean }
+): Promise<Candidate[]> {
+  const [profile, settings] = await Promise.all([getProfile(userId), getSettings(userId)]);
   const tz = profile.timezone || "America/Chicago";
 
   if (!opts?.force) {
@@ -151,7 +159,7 @@ export async function runAgenda(now = new Date(), opts?: { force?: boolean }): P
     if (inQuietHours(now, tz, from, to)) return [];
   }
 
-  const candidates = await buildCandidates(now);
+  const candidates = await buildCandidates(userId, now);
   const muted = settings.mutedKinds ?? [];
   const allowed = candidates
     .filter((c) => !muted.includes(c.kind))
@@ -166,6 +174,7 @@ export async function runAgenda(now = new Date(), opts?: { force?: boolean }): P
     try {
       await prisma.notification.create({
         data: {
+          userId,
           kind: candidate.kind,
           dedupeKey: opts?.force ? `${candidate.dedupeKey}:${Date.now()}` : candidate.dedupeKey,
           title: candidate.title,
@@ -177,7 +186,7 @@ export async function runAgenda(now = new Date(), opts?: { force?: boolean }): P
       continue; // already sent in this window
     }
 
-    const delivered = await sendPush({
+    const delivered = await sendPush(userId, {
       title: candidate.title,
       body: candidate.body,
       url: candidate.url,
@@ -185,7 +194,7 @@ export async function runAgenda(now = new Date(), opts?: { force?: boolean }): P
     });
 
     await prisma.notification.updateMany({
-      where: { dedupeKey: candidate.dedupeKey },
+      where: { userId, dedupeKey: candidate.dedupeKey },
       data: { delivered },
     });
 
@@ -196,4 +205,27 @@ export async function runAgenda(now = new Date(), opts?: { force?: boolean }): P
   }
 
   return sent;
+}
+
+
+/**
+ * The scheduler entry point: runs the rules for every active account.
+ *
+ * One user's failure must not stop the rest, so each is caught individually.
+ */
+export async function runAgendaForEveryone(now = new Date()): Promise<number> {
+  const users = await prisma.user.findMany({ where: { active: true }, select: { id: true } });
+  let total = 0;
+
+  for (const user of users) {
+    try {
+      const sent = await runAgenda(user.id, now);
+      total += sent.length;
+    } catch (err) {
+      const { logEvent } = await import("./logger");
+      await logEvent("agenda", `Rules failed for a user`, { detail: err });
+    }
+  }
+
+  return total;
 }

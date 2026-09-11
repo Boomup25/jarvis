@@ -33,6 +33,11 @@ character, open tasks, weekly workout count, recent pages.
 **Free to run.** OpenRouter with a fallback chain of free models. When one rate-limits,
 it silently tries the next. Add credits later and swap one env var.
 
+**Shareable.** Invite-only accounts. The owner mints a code from `/admin`, hands it over,
+and the new person gets their own memories, pages and history — completely separate from
+everyone else's. The owner pays for the API, so each account carries a monthly message
+quota you can dial up or down per person.
+
 ---
 
 ## Getting it running locally
@@ -105,14 +110,19 @@ src/
     chat/                 The conversation
     pages/                Saved-page library + individual page view
     memory/               What it knows about you, editable
-    login/
+    login/  signup/       Password sign-in; signup needs an invite code
+    admin/                Owner only: invites, accounts, quotas, data export
     api/
       chat/route.ts       Streaming loop: NDJSON events, tool calls, memory extraction
       pages/  memory/  tasks/  logs/  briefing/  models/  profile/  conversations/
+      invites/  users/    Owner-only account management
+      search/  export/    Global search; download everything as JSON
   components/
     ChatView.tsx          Client chat UI, stream reader, voice wiring
+    ReactorOrb.tsx        The canvas particle sphere — idle, listening, thinking, speaking
     Markdown.tsx          Dependency-free Markdown → React (no raw HTML, no XSS path)
     MemoryManager.tsx     Memory + profile editor
+    AdminPanel.tsx        Invite minting, per-account quotas
     useSpeech.ts          Speech recognition + synthesis hooks
   lib/
     openrouter.ts         Streaming client with model fallback chain
@@ -121,8 +131,28 @@ src/
     memory.ts             Recall ranking, dedupe, background fact extraction
     pages.ts              Similarity search, slugs, the "already saved" check
     auth.ts               HMAC session cookie via Web Crypto (works in proxy + node)
-prisma/schema.prisma      Profile, Memory, Page, Conversation, Message, Task, LogEntry
+    users.ts              Accounts, invites, quotas, usage accounting
+    password.ts           scrypt hashing, constant-time verify
+    ratelimit.ts          Sliding-window limiter for login, chat and speech
+    session.ts            requireUser() — the gate every route goes through
+scripts/audit-scoping.mjs Fails the build if a query forgets its userId
+prisma/schema.prisma      User, Profile, Memory, Page, Conversation, Message, Task,
+                          LogEntry, InviteCode, UsageRecord, SystemEvent
 ```
+
+### Keeping accounts apart
+
+Every row that belongs to a person carries a `userId`, and it is **required** in the
+schema — so the compiler rejects any write that forgets it. Reads are the gap the
+compiler can't close: `findMany({ where: { archived: false } })` type-checks fine and
+quietly returns everyone's rows. `npm run audit` greps for exactly that and the build
+refuses to run until it comes back clean. A row that's already been fetched through a
+userId filter and is then updated by its primary key is marked `// audit-ok: <reason>`.
+
+Routes never trust a client-supplied id. `requireUser()` returns the account from the
+session cookie, and every query is built from that — deletes and updates use
+`deleteMany`/`updateMany` so the userId lands *inside* the where clause rather than
+being checked afterwards.
 
 ### The chat loop
 

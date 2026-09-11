@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
+import { currentUser } from "@/lib/session";
 import { touchPage } from "@/lib/pages";
-import { Markdown } from "@/components/Markdown";
+import { PageEditor } from "@/components/PageEditor";
 import { PageActions } from "@/components/PageActions";
 import { PAGE_ICONS } from "@/components/Icons";
 
@@ -10,16 +11,27 @@ export const dynamic = "force-dynamic";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const page = await prisma.page.findUnique({ where: { slug }, select: { title: true } });
+  const user = await currentUser();
+  if (!user) return { title: "JARVIS" };
+  const page = await prisma.page.findUnique({
+    where: { userId_slug: { userId: user.id, slug } },
+    select: { title: true },
+  });
   return { title: page ? `${page.title} · JARVIS` : "JARVIS" };
 }
 
 export default async function PageView({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const page = await prisma.page.findUnique({ where: { slug } });
+  const user = await currentUser();
+  if (!user) redirect("/login");
+
+  // Scoped lookup: another account's slug simply doesn't exist here.
+  const page = await prisma.page.findUnique({
+    where: { userId_slug: { userId: user.id, slug } },
+  });
   if (!page) notFound();
 
-  void touchPage(slug);
+  void touchPage(user.id, slug);
 
   const Icon = PAGE_ICONS[page.type as keyof typeof PAGE_ICONS] ?? PAGE_ICONS.note;
 
@@ -55,9 +67,12 @@ export default async function PageView({ params }: { params: Promise<{ slug: str
         </div>
       )}
 
-      <article className="mt-6 rounded-2xl glass p-4">
-        <Markdown>{page.contentMd}</Markdown>
-      </article>
+      <PageEditor
+        slug={page.slug}
+        initialTitle={page.title}
+        initialSummary={page.summary}
+        initialContent={page.contentMd}
+      />
 
       <PageActions slug={page.slug} title={page.title} type={page.type} pinned={page.pinned} />
     </div>

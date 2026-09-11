@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { prisma, getProfile } from "@/lib/db";
+import { currentUser } from "@/lib/session";
 import { buildInsights } from "@/lib/insights";
 import { Greeting } from "@/components/Greeting";
 import { ReactorOrb } from "@/components/ReactorOrb";
@@ -11,16 +13,24 @@ import {
   StatTile,
 } from "@/components/DashboardCards";
 import { CheckIcon, PAGE_ICONS } from "@/components/Icons";
+import { DashboardHeaderActions } from "@/components/DashboardHeaderActions";
 
 export const dynamic = "force-dynamic";
 
 export default async function Dashboard() {
+  const user = await currentUser();
+  if (!user) redirect("/login");
+
   const [profile, insights, tasks, recentPages] = await Promise.all([
-    getProfile(),
-    buildInsights(),
-    prisma.task.findMany({ where: { done: false }, orderBy: [{ dueAt: "asc" }], take: 4 }),
+    getProfile(user.id),
+    buildInsights(user.id),
+    prisma.task.findMany({
+      where: { userId: user.id, done: false },
+      orderBy: [{ dueAt: "asc" }],
+      take: 4,
+    }),
     prisma.page.findMany({
-      where: { archived: false },
+      where: { userId: user.id, archived: false },
       orderBy: [{ pinned: "desc" }, { updatedAt: "desc" }],
       take: 4,
       select: { slug: true, title: true, type: true },
@@ -45,11 +55,16 @@ export default async function Dashboard() {
   return (
     <main className="h-full overflow-y-auto overscroll-contain px-4 pb-10 pt-6 safe-top">
       <div className="mx-auto max-w-lg">
+      <DashboardHeaderActions isOwner={user.role === "owner"} />
+
       {/* ---- hero ---------------------------------------------------- */}
       <section className="relative flex flex-col items-center pt-2">
         <div className="pointer-events-none absolute inset-x-0 -top-16 h-56 bg-[radial-gradient(ellipse_60%_60%_at_50%_50%,rgba(79,216,255,0.16),transparent_70%)]" />
 
-        <ReactorOrb state="idle" className="relative size-40" />
+        {/* The reactor is the obvious thing to reach for, so it opens the chat. */}
+        <Link href="/chat" aria-label="Talk to JARVIS" className="relative block">
+          <ReactorOrb state="idle" className="size-40" />
+        </Link>
 
         <p className="readout mt-1">{dateLabel}</p>
         <h1 className="mt-1 text-center text-xl font-semibold">

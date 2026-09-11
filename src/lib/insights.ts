@@ -74,21 +74,21 @@ function levelFor(count: number): number {
   return 4;
 }
 
-export async function buildInsights(): Promise<Insights> {
+export async function buildInsights(userId: string): Promise<Insights> {
   const now = new Date();
   const today = startOfDay(now);
   const gridStart = startOfWeek(new Date(today.getTime() - (HEATMAP_WEEKS - 1) * 7 * DAY));
 
   const [logs, pages, memories, openTasks, allPages] = await Promise.all([
     prisma.logEntry.findMany({
-      where: { occurredAt: { gte: gridStart } },
+      where: { userId, occurredAt: { gte: gridStart } },
       orderBy: { occurredAt: "desc" },
     }),
-    prisma.page.count({ where: { archived: false } }),
-    prisma.memory.count({ where: { active: true } }),
-    prisma.task.count({ where: { done: false } }),
+    prisma.page.count({ where: { userId, archived: false } }),
+    prisma.memory.count({ where: { userId, active: true } }),
+    prisma.task.count({ where: { userId, done: false } }),
     prisma.page.findMany({
-      where: { archived: false },
+      where: { userId, archived: false },
       select: { slug: true, title: true, type: true, viewCount: true, lastViewedAt: true, updatedAt: true },
       orderBy: { viewCount: "desc" },
       take: 200,

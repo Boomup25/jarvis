@@ -36,11 +36,19 @@ export interface PushPayload {
   tag?: string;
 }
 
-/** Sends to every active subscription. Prunes the ones the browser has revoked. */
-export async function sendPush(payload: PushPayload): Promise<number> {
+/**
+ * Sends to one user's devices. Prunes the ones the browser has revoked.
+ *
+ * userId is required rather than optional on purpose — an accidental
+ * broadcast of one person's notification to every account would be an
+ * unrecoverable privacy failure.
+ */
+export async function sendPush(userId: string, payload: PushPayload): Promise<number> {
   if (!configure()) return 0;
 
-  const subscriptions = await prisma.pushSubscription.findMany({ where: { active: true } });
+  const subscriptions = await prisma.pushSubscription.findMany({
+    where: { userId, active: true },
+  });
   if (!subscriptions.length) return 0;
 
   const body = JSON.stringify({
@@ -60,6 +68,7 @@ export async function sendPush(payload: PushPayload): Promise<number> {
           body
         );
         delivered++;
+        // audit-ok: sub came from the userId-filtered findMany above
         await prisma.pushSubscription.update({
           where: { id: sub.id },
           data: { lastSentAt: new Date(), failures: 0 },
@@ -68,11 +77,13 @@ export async function sendPush(payload: PushPayload): Promise<number> {
         const status = (err as { statusCode?: number }).statusCode;
         // 404/410 mean the browser threw the subscription away — stop trying.
         if (status === 404 || status === 410) {
+          // audit-ok: sub came from the userId-filtered findMany above
           await prisma.pushSubscription.update({
             where: { id: sub.id },
             data: { active: false },
           });
         } else {
+          // audit-ok: sub came from the userId-filtered findMany above
           await prisma.pushSubscription.update({
             where: { id: sub.id },
             data: { failures: { increment: 1 } },

@@ -1,15 +1,17 @@
 import { prisma } from "@/lib/db";
-import { guard } from "@/lib/session";
+import { requireUser } from "@/lib/session";
 import { pushConfigured } from "@/lib/push";
 
 export const dynamic = "force-dynamic";
 
 /** What the client needs to decide whether to offer push at all. */
 export async function GET() {
-  const denied = await guard();
-  if (denied) return denied;
+  const auth = await requireUser();
+  if ("denied" in auth) return auth.denied;
 
-  const count = await prisma.pushSubscription.count({ where: { active: true } });
+  const count = await prisma.pushSubscription.count({
+    where: { userId: auth.user.id, active: true },
+  });
   return Response.json({
     configured: pushConfigured(),
     publicKey: process.env.VAPID_PUBLIC_KEY ?? null,
@@ -19,8 +21,8 @@ export async function GET() {
 
 /** Register (or re-activate) this browser. */
 export async function POST(req: Request) {
-  const denied = await guard();
-  if (denied) return denied;
+  const auth = await requireUser();
+  if ("denied" in auth) return auth.denied;
 
   const body = await req.json().catch(() => null);
   const sub = body?.subscription;
@@ -30,8 +32,15 @@ export async function POST(req: Request) {
 
   const record = await prisma.pushSubscription.upsert({
     where: { endpoint: sub.endpoint },
-    update: { p256dh: sub.keys.p256dh, auth: sub.keys.auth, active: true, failures: 0 },
+    update: {
+      userId: auth.user.id,
+      p256dh: sub.keys.p256dh,
+      auth: sub.keys.auth,
+      active: true,
+      failures: 0,
+    },
     create: {
+      userId: auth.user.id,
       endpoint: sub.endpoint,
       p256dh: sub.keys.p256dh,
       auth: sub.keys.auth,
@@ -44,12 +53,12 @@ export async function POST(req: Request) {
 
 /** Unregister this browser. */
 export async function DELETE(req: Request) {
-  const denied = await guard();
-  if (denied) return denied;
+  const auth = await requireUser();
+  if ("denied" in auth) return auth.denied;
   const body = await req.json().catch(() => ({}));
   if (!body.endpoint) return Response.json({ error: "endpoint required" }, { status: 400 });
   await prisma.pushSubscription.updateMany({
-    where: { endpoint: String(body.endpoint) },
+    where: { userId: auth.user.id, endpoint: String(body.endpoint) },
     data: { active: false },
   });
   return Response.json({ ok: true });

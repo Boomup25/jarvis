@@ -1,13 +1,18 @@
+import { redirect } from "next/navigation";
 import { prisma, getProfile } from "@/lib/db";
+import { currentUser } from "@/lib/session";
 import { MemoryManager } from "@/components/MemoryManager";
 
 export const dynamic = "force-dynamic";
 
 export default async function MemoryPage() {
+  const user = await currentUser();
+  if (!user) redirect("/login");
+
   const [profile, memories] = await Promise.all([
-    getProfile(),
+    getProfile(user.id),
     prisma.memory.findMany({
-      where: { active: true },
+      where: { userId: user.id, active: true },
       orderBy: [{ pinned: "desc" }, { importance: "desc" }, { updatedAt: "desc" }],
       take: 500,
     }),

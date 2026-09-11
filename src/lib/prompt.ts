@@ -29,13 +29,13 @@ function formatMemories(memories: Memory[]): string {
     .join("\n");
 }
 
-export async function buildSystemPrompt(userMessage: string) {
+export async function buildSystemPrompt(userId: string, userMessage: string) {
   const [profile, memories, pages, matches, recentLogs] = await Promise.all([
-    getProfile(),
-    recallMemories(userMessage),
-    pageIndex(),
-    findSimilarPages(userMessage, { limit: 4 }),
-    prisma.logEntry.findMany({ orderBy: { occurredAt: "desc" }, take: 12 }),
+    getProfile(userId),
+    recallMemories(userId, userMessage),
+    pageIndex(userId),
+    findSimilarPages(userId, userMessage, { limit: 4 }),
+    prisma.logEntry.findMany({ where: { userId }, orderBy: { occurredAt: "desc" }, take: 12 }),
   ]);
 
   const now = new Date();

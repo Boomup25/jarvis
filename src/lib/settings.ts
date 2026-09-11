@@ -3,7 +3,7 @@
  */
 
 import type { Prisma } from "@prisma/client";
-import { prisma, getProfile, PROFILE_ID } from "./db";
+import { prisma, getProfile } from "./db";
 
 export interface Settings {
   /** OpenRouter model id the user picked in the UI. Empty = use the default chain. */
@@ -29,8 +29,8 @@ export interface Settings {
   lon?: number;
 }
 
-export async function getSettings(): Promise<Settings> {
-  const profile = await getProfile();
+export async function getSettings(userId: string): Promise<Settings> {
+  const profile = await getProfile(userId);
   const data = (profile.data ?? {}) as Record<string, unknown>;
   return {
     model: typeof data.model === "string" && data.model ? data.model : undefined,
@@ -54,8 +54,8 @@ export async function getSettings(): Promise<Settings> {
 }
 
 /** Merges into Profile.data rather than replacing it. */
-export async function saveSettings(patch: Settings): Promise<Settings> {
-  const profile = await getProfile();
+export async function saveSettings(userId: string, patch: Settings): Promise<Settings> {
+  const profile = await getProfile(userId);
   const data = { ...((profile.data ?? {}) as Record<string, unknown>) };
 
   for (const [key, value] of Object.entries(patch)) {
@@ -65,8 +65,8 @@ export async function saveSettings(patch: Settings): Promise<Settings> {
   }
 
   await prisma.profile.update({
-    where: { id: PROFILE_ID },
+    where: { userId },
     data: { data: data as Prisma.InputJsonObject },
   });
-  return getSettings();
+  return getSettings(userId);
 }

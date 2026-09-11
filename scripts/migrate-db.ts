@@ -29,8 +29,14 @@ if (sourceUrl === targetUrl) throw new Error("Source and target are the same dat
 const source = new PrismaClient({ datasources: { db: { url: sourceUrl } } });
 const target = new PrismaClient({ datasources: { db: { url: targetUrl } } });
 
-/** Order matters: parents before the rows that reference them. */
+/**
+ * Order matters: parents before the rows that reference them.
+ *
+ * `user` has to lead — every other table now carries a userId foreign key,
+ * and LogEntry points at Page.slug, so pages come before logs.
+ */
 const TABLES = [
+  "user",
   "profile",
   "memory",
   "page",
@@ -38,6 +44,11 @@ const TABLES = [
   "message",
   "task",
   "logEntry",
+  "inviteCode",
+  "usageRecord",
+  "pushSubscription",
+  "notification",
+  "systemEvent",
 ] as const;
 
 async function copyTable(name: (typeof TABLES)[number]) {
