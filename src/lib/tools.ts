@@ -8,12 +8,19 @@ import { rememberFact } from "./memory";
 import { findSimilarPages, normalizeType, uniqueSlug, PAGE_TYPES } from "./pages";
 import { webSearch } from "./openrouter";
 import type { ToolSchema } from "./openrouter";
+import { runOnMachine, type BridgeContext } from "./bridgeTools";
 
 export interface ToolContext {
   /** Whose data this tool may touch. Every query below is scoped to it. */
   userId: string;
   /** Emitted to the client so the UI can render a card the moment it happens. */
   emit: (event: { type: string; [k: string]: unknown }) => void;
+  /**
+   * The connected machine, when the bridge is unlocked and an agent is online.
+   * Absent the rest of the time, and the computer_* schemas are withheld with
+   * it — so JARVIS never offers to touch a machine it cannot reach.
+   */
+  bridge?: BridgeContext | null;
 }
 
 export interface ToolResult {
@@ -384,13 +391,196 @@ const tools: Record<string, ToolDef> = {
   },
 };
 
-export function toolSchemas(): ToolSchema[] {
-  return Object.values(tools).map((t) => t.schema);
+/**
+ * Tools that act on the user's computer.
+ *
+ * Kept separate from the map above because they are conditional: they are only
+ * offered when a machine is genuinely reachable. The capability each one needs
+ * is declared so the list can be filtered against what that machine actually
+ * advertised.
+ */
+const machineTools: Record<string, ToolDef & { needs: string }> = {
+  computer_write_file: {
+    needs: "files.write",
+    schema: {
+      type: "function",
+      function: {
+        name: "computer_write_file",
+        description:
+          "Write a text file onto the user's connected computer, inside a folder they have shared. " +
+          "Use this when they ask you to save, create or put something in a folder ON THEIR MACHINE " +
+          "(as opposed to saving a page in this app, which is save_page). " +
+          "Give an absolute path inside one of the shared folders.",
+        parameters: {
+          type: "object",
+          properties: {
+            path: { type: "string", description: "Absolute path, inside a shared folder." },
+            content: { type: "string", description: "The complete file contents." },
+          },
+          required: ["path", "content"],
+        },
+      },
+    },
+    handler: async (args, ctx) => machineCall(ctx, "files.write", {
+      path: String(args.path ?? ""),
+      content: String(args.content ?? ""),
+    }),
+  },
+
+  computer_read_file: {
+    needs: "files.read",
+    schema: {
+      type: "function",
+      function: {
+        name: "computer_read_file",
+        description:
+          "Read a text file from the user's connected computer. Absolute path, inside a shared folder.",
+        parameters: {
+          type: "object",
+          properties: { path: { type: "string" } },
+          required: ["path"],
+        },
+      },
+    },
+    handler: async (args, ctx) => machineCall(ctx, "files.read", { path: String(args.path ?? "") }),
+  },
+
+  computer_list_files: {
+    needs: "files.list",
+    schema: {
+      type: "function",
+      function: {
+        name: "computer_list_files",
+        description:
+          "List what's in a folder on the user's connected computer. " +
+          "Call this first if you're unsure what a shared folder contains.",
+        parameters: {
+          type: "object",
+          properties: { path: { type: "string" } },
+          required: ["path"],
+        },
+      },
+    },
+    handler: async (args, ctx) => machineCall(ctx, "files.list", { path: String(args.path ?? "") }),
+  },
+
+  computer_search_files: {
+    needs: "files.search",
+    schema: {
+      type: "function",
+      function: {
+        name: "computer_search_files",
+        description:
+          "Find files by name on the user's connected computer, across their shared folders.",
+        parameters: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "Part of a filename." },
+            path: { type: "string", description: "Optional folder to search within." },
+          },
+          required: ["query"],
+        },
+      },
+    },
+    handler: async (args, ctx) =>
+      machineCall(ctx, "files.search", {
+        query: String(args.query ?? ""),
+        ...(args.path ? { path: String(args.path) } : {}),
+      }),
+  },
+
+  computer_open: {
+    needs: "app.open",
+    schema: {
+      type: "function",
+      function: {
+        name: "computer_open",
+        description:
+          "Open a file, folder or https link on the user's connected computer with its default app.",
+        parameters: {
+          type: "object",
+          properties: { target: { type: "string" } },
+          required: ["target"],
+        },
+      },
+    },
+    handler: async (args, ctx) => machineCall(ctx, "app.open", { target: String(args.target ?? "") }),
+  },
+
+  computer_info: {
+    needs: "system.info",
+    schema: {
+      type: "function",
+      function: {
+        name: "computer_info",
+        description:
+          "Report what the user's connected computer is: OS, CPU, memory, graphics card, and which folders are shared.",
+        parameters: { type: "object", properties: {} },
+      },
+    },
+    handler: async (_args, ctx) => machineCall(ctx, "system.info", {}),
+  },
+};
+
+/** Shared plumbing: run it, tell the UI, hand the model a usable answer. */
+async function machineCall(
+  ctx: ToolContext,
+  capability: string,
+  args: Record<string, unknown>
+): Promise<ToolResult> {
+  if (!ctx.bridge) {
+    return {
+      ok: false,
+      error:
+        "No computer is connected. The bridge must be unlocked in Settings and the agent running.",
+    };
+  }
+
+  const outcome = await runOnMachine(ctx.bridge, capability as never, args);
+
+  ctx.emit({
+    type: "machine_action",
+    capability,
+    device: ctx.bridge.deviceName,
+    ok: outcome.ok,
+    detail: String(args.path ?? args.target ?? args.query ?? ""),
+    error: outcome.error ?? "",
+  });
+
+  if (!outcome.ok) {
+    // Hand the refusal back verbatim. The model needs to know it was refused
+    // and why, so it can tell the user instead of claiming success.
+    return { ok: false, error: outcome.error ?? "The machine refused that." };
+  }
+  return { ok: true, device: ctx.bridge.deviceName, ...(outcome.result as object) };
+}
+
+export function toolSchemas(ctx?: Pick<ToolContext, "bridge">): ToolSchema[] {
+  const base = Object.values(tools).map((t) => t.schema);
+  const bridge = ctx?.bridge;
+  if (!bridge) return base;
+
+  // Only offer what this particular machine said it would do.
+  const offered = Object.values(machineTools)
+    .filter((t) => bridge.capabilities.includes(t.needs))
+    .map((t) => t.schema);
+
+  return [...base, ...offered];
 }
 
 export async function runTool(name: string, rawArgs: string, ctx: ToolContext): Promise<ToolResult> {
-  const def = tools[name];
+  const def = tools[name] ?? machineTools[name];
   if (!def) return { ok: false, error: `Unknown tool "${name}"` };
+
+  // A machine tool is only real while a machine is reachable. Guarding here as
+  // well as at schema time means a model that hallucinates the name from an
+  // earlier turn gets a clear refusal rather than a crash.
+  if (machineTools[name] && !ctx.bridge) {
+    return {
+      ok: false,
+      error: "No computer is connected. Unlock the bridge in Settings and start the agent.",
+    };
+  }
 
   let args: any = {};
   if (rawArgs?.trim()) {

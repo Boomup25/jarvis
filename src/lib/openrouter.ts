@@ -11,7 +11,13 @@
 
 import { modelChain } from "./models";
 
-const BASE = "https://openrouter.ai/api/v1";
+/**
+ * OpenRouter's API root.
+ *
+ * Overridable so the chat loop — tool calls included — can be driven against a
+ * local stub in tests without spending real tokens. Unset in normal use.
+ */
+const BASE = process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1";
 
 export type Role = "system" | "user" | "assistant" | "tool";
 

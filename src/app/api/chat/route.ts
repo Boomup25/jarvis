@@ -12,6 +12,7 @@
  *   {"type":"error","message":"..."}
  */
 
+import { cookies } from "next/headers";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { rateLimit, clientKey, tooMany } from "@/lib/ratelimit";
@@ -20,6 +21,8 @@ import { logEvent } from "@/lib/logger";
 import { buildSystemPrompt } from "@/lib/prompt";
 import { streamChat, discoverVisionModels, type ChatMessage, type ToolCall } from "@/lib/openrouter";
 import { runTool, toolSchemas } from "@/lib/tools";
+import { bridgeContextFor } from "@/lib/bridgeTools";
+import { BRIDGE_COOKIE, readUnlockToken, isOwnerUser } from "@/lib/bridge";
 import { extractMemories } from "@/lib/memory";
 import { findSimilarPages, STRONG_MATCH } from "@/lib/pages";
 import { completeJson } from "@/lib/openrouter";
@@ -178,10 +181,26 @@ export async function POST(req: Request) {
         let finalText = "";
         let usedModel = "";
 
+        /*
+         * Can this turn touch the user's computer?
+         *
+         * Exactly the same gate as the panel — owner account, a live unlock,
+         * and an agent actually connected. Resolved once per request: if the
+         * answer is no, the computer_* schemas are never handed to the model,
+         * which is why JARVIS says it can't rather than promising and failing.
+         */
+        const unlockedFor = await readUnlockToken(
+          (await cookies()).get(BRIDGE_COOKIE)?.value
+        );
+        const bridge =
+          unlockedFor === userId && isOwnerUser(user)
+            ? await bridgeContextFor(userId)
+            : null;
+
         for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
           const result = await streamChat({
             messages,
-            tools: toolSchemas(),
+            tools: toolSchemas({ bridge }),
             models: chain,
             signal: req.signal,
             onDelta: (delta) => send({ type: "text", delta }),
@@ -208,6 +227,7 @@ export async function POST(req: Request) {
             const toolResult = await runTool(call.function.name, call.function.arguments, {
               userId,
               emit: send,
+              bridge,
             });
             messages.push({
               role: "tool",

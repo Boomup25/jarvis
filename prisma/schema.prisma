@@ -204,6 +204,8 @@ model User {
   active       Boolean   @default(true)
   /// Messages allowed per calendar month. 0 means unlimited.
   monthlyQuota Int       @default(200)
+  /// scrypt hash of the bridge passphrase. Empty means the bridge is unarmed.
+  bridgeHash   String    @default("")
   createdAt    DateTime  @default(now())
   lastSeenAt   DateTime?
 
@@ -217,8 +219,54 @@ model User {
   notifications     Notification[]
   usage             UsageRecord[]
   invites           InviteCode[]       @relation("InviteCreator")
+  devices           Device[]
+  deviceCommands    DeviceCommand[]
 
   @@index([active])
+}
+
+/// A machine paired with this account. One row per computer running the agent.
+model Device {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  /// scrypt hash of the device token. The token itself is shown once and never stored.
+  tokenHash String
+  platform  String   @default("")
+  /// What the machine reported it is willing to do. The agent decides this,
+  /// not the server — the web side can never widen its own reach.
+  capabilities String[] @default([])
+  /// Roots the agent exposes, for display only. Authority lives on the machine.
+  roots     String[] @default([])
+  active    Boolean  @default(true)
+  lastSeenAt DateTime?
+  createdAt DateTime @default(now())
+
+  commands  DeviceCommand[]
+
+  @@index([userId, active])
+}
+
+/// Every instruction sent to a machine, and what came back. The audit trail.
+model DeviceCommand {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId   String
+  device     Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  capability String
+  args       Json      @default("{}")
+  /// pending | sent | ok | error | denied
+  status     String    @default("pending")
+  result     Json?
+  error      String    @default("")
+  createdAt  DateTime  @default(now())
+  sentAt     DateTime?
+  finishedAt DateTime?
+
+  @@index([userId, createdAt])
+  @@index([deviceId, status])
 }
 
 /// Signup is invite-only. Nobody gets an account without one of these.

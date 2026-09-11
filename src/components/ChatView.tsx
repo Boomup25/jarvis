@@ -9,6 +9,7 @@ import { ReactorOrb, type OrbState } from "./ReactorOrb";
 import { SettingsSheet } from "./SettingsSheet";
 import { FOCUS_COMPOSER } from "./commandBus";
 import { isFarewell } from "@/lib/farewell";
+import { routeVoiceInput, transitionVoiceSession, type VoiceSession } from "@/lib/voiceSession";
 import { HistorySheet, HistoryRail } from "./HistorySheet";
 import { prepareImage, type PreparedImage } from "./imageUtils";
 import {
@@ -39,6 +40,8 @@ interface ChatMessage {
   pages?: SavedPage[];
   memories?: string[];
   sources?: Citation[];
+  /** What JARVIS did on the connected computer during this reply. */
+  machine?: { capability: string; device: string; ok: boolean; detail: string; error: string }[];
   imageUrl?: string;
   model?: string;
   at?: number;
@@ -69,6 +72,12 @@ const TOOL_LABELS = {
   list_tasks: "Reading tasks",
   log_activity: "Logging",
   recent_activity: "Reviewing week",
+  computer_write_file: "Writing to your computer",
+  computer_read_file: "Reading from your computer",
+  computer_list_files: "Looking in that folder",
+  computer_search_files: "Searching your computer",
+  computer_open: "Opening it",
+  computer_info: "Checking your machine",
 } as const;
 
 /**
@@ -100,11 +109,13 @@ export function ChatView({
   initialPrompt,
   initialLayout = "presence",
   initialAutoListen = false,
+  initialWakeWordEnabled = true,
 }: {
   initialConversationId?: string;
   initialPrompt?: string;
   initialLayout?: ChatLayout;
   initialAutoListen?: boolean;
+  initialWakeWordEnabled?: boolean;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState(initialPrompt ?? "");
@@ -132,7 +143,16 @@ export function ChatView({
    * conversation: while it's true, the microphone reopens on its own after
    * every reply, so you can keep talking without touching anything.
    */
-  const [live, setLive] = useState(false);
+  const [wakeWordEnabled, setWakeWordEnabled] = useState(initialWakeWordEnabled);
+  const [session, setSessionState] = useState<VoiceSession>("off");
+  const sessionRef = useRef<VoiceSession>("off");
+  const setSession = useCallback((next: VoiceSession) => {
+    sessionRef.current = next; // Gate recognition callbacks before React renders.
+    setSessionState(next);
+  }, []);
+  const live = session === "active";
+  const armed = session !== "off";
+  const waiting = session === "waiting";
 
   /**
    * Set when the last thing you said was a goodbye. The conversation doesn't
@@ -175,7 +195,7 @@ export function ChatView({
       .catch(() => {});
   }, []);
 
-  const persistSetting = useCallback((patch: { chatLayout?: ChatLayout; autoListen?: boolean }) => {
+  const persistSetting = useCallback((patch: { chatLayout?: ChatLayout; autoListen?: boolean; wakeWordEnabled?: boolean }) => {
     fetch("/api/settings", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -230,13 +250,16 @@ export function ChatView({
     async (text: string) => {
       const trimmed = text.trim();
       const photo = attachment;
-      if ((!trimmed && !photo) || busy) return;
+      if ((!trimmed && !photo) || busyRef.current) return;
+      busyRef.current = true;
+      // Typed requests also suspend the wake listener before audio can start.
+      micCancelRef.current();
 
       // "Thanks JARVIS", "that's all", "talk to you later". Answer it and speak
       // the reply, then close — ending mid-utterance would be rude and would
       // swallow the answer. Only meaningful while a conversation is open;
       // typing "thanks" with the mic shut changes nothing.
-      if (liveRef.current && isFarewell(trimmed)) {
+      if (sessionRef.current === "active" && isFarewell(trimmed)) {
         closingRef.current = true;
         setClosing(true);
       }
@@ -350,6 +373,21 @@ export function ChatView({
               case "memory_saved":
                 patch((m) => ({ ...m, memories: [...(m.memories ?? []), event.content] }));
                 break;
+              case "machine_action":
+                patch((m) => ({
+                  ...m,
+                  machine: [
+                    ...(m.machine ?? []),
+                    {
+                      capability: String(event.capability),
+                      device: String(event.device),
+                      ok: Boolean(event.ok),
+                      detail: String(event.detail ?? ""),
+                      error: String(event.error ?? ""),
+                    },
+                  ],
+                }));
+                break;
               case "done":
                 setConversationId(event.conversationId);
                 setStatus(null);
@@ -366,6 +404,7 @@ export function ChatView({
           setError(err instanceof Error ? err.message : "Connection lost.");
         }
       } finally {
+        busyRef.current = false;
         setBusy(false);
         setStatus(null);
         abortRef.current = null;
@@ -378,13 +417,20 @@ export function ChatView({
   const mic = useSpeechInput(
     useCallback(
       (text: string) => {
-        void send(text);
+        if (busyRef.current || speakingRef.current) return;
+        const action = routeVoiceInput(sessionRef.current, text);
+        if (action.kind === "ignore") return;
+        if (action.kind === "stop") {
+          endRef.current();
+          return;
+        }
+        setSession(transitionVoiceSession(sessionRef.current, "wake", wakeWordEnabled));
+        if (action.kind === "request") void send(action.text);
       },
-      [send]
+      [send, setSession, wakeWordEnabled]
     ),
-    // While a conversation is open the microphone stays open through silence
-    // rather than giving up and complaining it heard nothing.
-    { keepAlive: live }
+    // Both a conversation and wake standby survive quiet recognition sessions.
+    { keepAlive: armed }
   );
 
   useEffect(() => {
@@ -409,22 +455,45 @@ export function ChatView({
   shutUpRef.current = voice.shutUp;
   unlockRef.current = voice.unlock;
 
-  const liveRef = useRef(live);
   const busyRef = useRef(busy);
   // `pending` covers the whole reply, gaps included — `speaking` alone dips to
   // false between audio chunks, which is precisely when we must not open the mic.
   const speakingRef = useRef(voice.pending || voice.speaking);
-  liveRef.current = live;
   busyRef.current = busy;
   speakingRef.current = voice.pending || voice.speaking;
 
   const endConversation = useCallback(() => {
-    setLive(false);
+    setSession("off");
     setClosing(false);
     closingRef.current = false;
     micCancelRef.current();
     shutUpRef.current();
-  }, []);
+  }, [setSession]);
+
+  // A natural ending goes back to the wake phrase; an explicit mic-off does not.
+  const finishConversation = useCallback(() => {
+    setSession(transitionVoiceSession(sessionRef.current, "finish", wakeWordEnabled));
+    setClosing(false);
+    closingRef.current = false;
+    micCancelRef.current();
+  }, [setSession, wakeWordEnabled]);
+  const finishRef = useRef(finishConversation);
+  finishRef.current = finishConversation;
+
+  // Permission/network failures need a deliberate retry, not an endless loop.
+  useEffect(() => {
+    if (!mic.error) return;
+    setSession("off");
+    closingRef.current = false;
+    setClosing(false);
+  }, [mic.error, setSession]);
+
+  // Settings previews and typed replies must not be transcribed as user speech.
+  useEffect(() => {
+    if (busy || voice.pending || voice.speaking || settingsOpen || historyOpen) {
+      micCancelRef.current();
+    }
+  }, [busy, voice.pending, voice.speaking, settingsOpen, historyOpen]);
 
   const endRef = useRef(endConversation);
   endRef.current = endConversation;
@@ -432,13 +501,12 @@ export function ChatView({
   // Reopen the microphone once the floor is free. Never while a reply is
   // playing — an open mic during playback transcribes JARVIS talking to itself.
   useEffect(() => {
-    if (!live || busy || voice.pending || voice.speaking || mic.listening) return;
+    if (!armed || mic.error || busy || voice.pending || voice.speaking || mic.listening || settingsOpen || historyOpen) return;
 
     // You said goodbye and the reply has now finished playing. Close instead
     // of reopening — this is the whole point of noticing the sign-off.
     if (closingRef.current) {
-      closingRef.current = false;
-      endRef.current();
+      finishRef.current();
       return;
     }
 
@@ -447,18 +515,18 @@ export function ChatView({
       // closed over. The speech queue reports "not speaking" in the gap between
       // two audio chunks, and without this a long reply with a pause in it
       // would open the microphone into the middle of its own sentence.
-      if (liveRef.current && !busyRef.current && !speakingRef.current) {
+      if (sessionRef.current !== "off" && !busyRef.current && !speakingRef.current) {
         micStartRef.current();
       }
     }, RESUME_GAP_MS);
     return () => clearTimeout(timer);
-  }, [live, busy, voice.pending, voice.speaking, mic.listening]);
+  }, [session, armed, busy, voice.pending, voice.speaking, mic.listening, mic.supported, mic.error, settingsOpen, historyOpen]);
 
   // Close the conversation after a stretch of silence. activityAt changes on
   // every detected utterance, which re-runs this and pushes the deadline back.
   useEffect(() => {
     if (!live || !mic.listening) return;
-    const timer = setTimeout(() => endRef.current(), IDLE_END_MS);
+    const timer = setTimeout(() => finishRef.current(), IDLE_END_MS);
     return () => clearTimeout(timer);
   }, [live, mic.listening, mic.activityAt]);
 
@@ -477,30 +545,33 @@ export function ChatView({
 
   // Open the conversation on arrival when that's the preference.
   useEffect(() => {
-    if (initialAutoListen) setLive(true);
-  }, [initialAutoListen]);
+    if (initialAutoListen) {
+      setSession(transitionVoiceSession("off", "arm", initialWakeWordEnabled));
+    }
+  }, [initialAutoListen, initialWakeWordEnabled, setSession]);
 
   const toggleConversation = useCallback(() => {
     voice.unlock();
-    if (liveRef.current) {
+    if (sessionRef.current !== "off") {
       endConversation();
       return;
     }
     closingRef.current = false;
     setClosing(false);
     void micLevel.start(); // desktop only; no-ops on mobile
-    setLive(true);
-  }, [voice, micLevel, endConversation]);
+    micCancelRef.current(); // Clear an earlier microphone error before retrying.
+    setSession("active");
+  }, [voice, micLevel, endConversation, setSession]);
 
   // Escape ends the conversation.
   useEffect(() => {
-    if (!live) return;
+    if (!armed) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") endRef.current();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [live]);
+  }, [armed]);
 
   const stop = () => {
     abortRef.current?.abort();
@@ -511,6 +582,7 @@ export function ChatView({
 
   const newConversation = () => {
     stop();
+    finishConversation();
     setMessages([]);
     setMatches([]);
     setConversationId(undefined);
@@ -520,7 +592,7 @@ export function ChatView({
 
   /* ---- render ---------------------------------------------------------- */
 
-  const orbState: OrbState = mic.listening
+  const orbState: OrbState = mic.listening && live
     ? "listening"
     : busy
       ? "thinking"
@@ -531,7 +603,7 @@ export function ChatView({
   const modelLabel = activeModel ?? selectedModel;
 
   const stageLabel = mic.listening
-    ? "Listening"
+    ? waiting ? 'Waiting for “Hey Jarvis”' : "Listening"
     : busy
       ? (status ?? "Thinking")
       : closing
@@ -540,13 +612,16 @@ export function ChatView({
           ? "Speaking"
           : live
             ? "Go ahead"
-            : "Standing by";
+            : waiting ? 'Waiting for “Hey Jarvis”' : "Microphone off";
 
   const lastUser = [...messages].reverse().find((m) => m.role === "user");
   const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
 
   const orbPress = mic.supported ? toggleConversation : undefined;
-  const orbLabel = live ? "End the conversation" : "Start talking to JARVIS";
+  const orbLabel = armed ? "Turn off microphone" : "Start talking to JARVIS";
+  const conversationHint = waiting
+    ? 'Say “Hey Jarvis” to begin. You can include your question in the same breath.'
+    : 'Tap the reactor to talk. Say “that’s all” when finished; after 30 seconds of quiet, the conversation ends.';
 
   const notices = (
     <>
@@ -655,9 +730,9 @@ export function ChatView({
             </p>
 
             {/* what you just said */}
-            {(mic.listening || lastUser) && (
+            {((mic.listening && live) || lastUser) && (
               <p className="mt-4 line-clamp-2 max-w-xl text-center text-[0.88rem] leading-snug text-mist">
-                {mic.listening ? mic.interim || "…" : lastUser?.content}
+                {mic.listening && live ? mic.interim || "…" : lastUser?.content}
               </p>
             )}
 
@@ -674,12 +749,15 @@ export function ChatView({
               ) : messages.length === 0 ? (
                 <p className="mx-auto max-w-sm text-center text-[0.85rem] leading-snug text-mist">
                   {orbPress
-                    ? "Tap the reactor and start talking. I'll keep listening between answers."
+                    ? conversationHint
                     : "Ask for a workout or a recipe — I'll save it to a page you can come back to."}
                 </p>
               ) : null}
 
-              {lastAssistant && (lastAssistant.pages?.length || lastAssistant.memories?.length) ? (
+              {lastAssistant &&
+              (lastAssistant.pages?.length ||
+                lastAssistant.memories?.length ||
+                lastAssistant.machine?.length) ? (
                 <div className="mt-3 space-y-1.5">
                   {lastAssistant.pages?.map((page) => (
                     <PageChip key={page.slug} page={page} label="Saved" />
@@ -688,6 +766,9 @@ export function ChatView({
                     <p key={i} className="readout text-jade/80">
                       ▸ noted — <span className="normal-case tracking-normal text-mist">{memory}</span>
                     </p>
+                  ))}
+                  {lastAssistant.machine?.map((action, i) => (
+                    <MachineAction key={i} action={action} />
                   ))}
                 </div>
               ) : null}
@@ -716,7 +797,7 @@ export function ChatView({
               {orb("size-24 lg:size-28")}
               <p className="readout mt-2 flex items-center gap-2">
                 {(mic.listening || busy) && <span className="live-dot size-1 rounded-full bg-arc" />}
-                {mic.listening ? mic.interim || stageLabel : stageLabel}
+                {mic.listening && live ? mic.interim || stageLabel : stageLabel}
               </p>
             </div>
 
@@ -725,7 +806,7 @@ export function ChatView({
                 {messages.length === 0 && (
                   <p className="mx-auto mt-10 max-w-sm text-center text-[0.85rem] leading-snug text-mist">
                     {orbPress
-                      ? "Tap the reactor and start talking. I'll keep listening between answers."
+                      ? conversationHint
                       : "Ask for a workout or a recipe — I'll save it to a page you can come back to."}
                   </p>
                 )}
@@ -782,7 +863,7 @@ export function ChatView({
                             </div>
                           )}
 
-                          {(message.pages?.length || message.memories?.length) && (
+                          {(message.pages?.length || message.memories?.length || message.machine?.length) && (
                             <div className="mt-2.5 space-y-1.5 pl-3">
                               {message.pages?.map((page) => (
                                 <PageChip key={page.slug} page={page} label="Saved" />
@@ -792,6 +873,9 @@ export function ChatView({
                                   ▸ noted —{" "}
                                   <span className="normal-case tracking-normal text-mist">{memory}</span>
                                 </p>
+                              ))}
+                              {message.machine?.map((action, i) => (
+                                <MachineAction key={i} action={action} />
                               ))}
                             </div>
                           )}
@@ -876,10 +960,12 @@ export function ChatView({
             <p className="readout mx-auto max-w-lg px-4 pt-2.5 md:max-w-2xl lg:max-w-3xl">Preparing photo…</p>
           )}
 
-          {live && (
-            <p className="readout mx-auto max-w-lg px-4 pt-2 md:max-w-2xl lg:max-w-3xl">
-              {closing
-                ? "Signing off · I'll stop listening once I've finished"
+          {armed && (
+            <p aria-live="polite" className="readout mx-auto max-w-lg px-4 pt-2 md:max-w-2xl lg:max-w-3xl">
+              {waiting
+                ? 'Waiting for “Hey Jarvis” · microphone on · tap the mic or press Escape to turn it off'
+                : closing
+                ? "Signing off · the conversation ends after this reply"
                 : mic.listening
                   ? `Conversation open · sends after ${(mic.silenceMs / 1000).toFixed(1)}s quiet`
                   : "Conversation open · I'll listen again when I've finished"}
@@ -895,7 +981,7 @@ export function ChatView({
           >
             <textarea
               ref={textareaRef}
-              value={mic.listening ? mic.interim || "Listening…" : input}
+              value={mic.listening && live ? mic.interim || "Listening…" : input}
               onChange={(e) => {
                 setInput(e.target.value);
                 const el = e.target;
@@ -910,7 +996,7 @@ export function ChatView({
                   void send(input);
                 }
               }}
-              readOnly={mic.listening}
+              readOnly={mic.listening && live}
               rows={1}
               placeholder="Ask JARVIS…"
               className="max-h-[132px] min-h-[42px] flex-1 resize-none border border-edge bg-void/60 px-3.5 py-2.5 text-[0.92rem] text-frost placeholder:text-mist/50 focus:border-arc/50 focus:outline-none"
@@ -936,7 +1022,7 @@ export function ChatView({
               }}
             />
 
-            {!busy && !mic.listening && (
+            {!busy && !(mic.listening && live) && (
               <button
                 type="button"
                 onClick={() => fileRef.current?.click()}
@@ -955,7 +1041,7 @@ export function ChatView({
                 onClick={toggleConversation}
                 aria-label={orbLabel}
                 className={`relative shrink-0 p-3 transition-colors ${
-                  live ? "listening bg-arc/20 text-arc" : "border border-edge text-mist hover:text-frost"
+                  armed ? "listening bg-arc/20 text-arc" : "border border-edge text-mist hover:text-frost"
                 }`}
               >
                 <MicIcon className="size-5" />
@@ -999,7 +1085,15 @@ export function ChatView({
         autoListen={autoListen}
         onAutoListenChange={(next) => {
           setAutoListen(next);
+          micCancelRef.current();
+          setSession(next ? transitionVoiceSession("off", "arm", wakeWordEnabled) : "off");
           persistSetting({ autoListen: next });
+        }}
+        wakeWordEnabled={wakeWordEnabled}
+        onWakeWordEnabledChange={(next) => {
+          setWakeWordEnabled(next);
+          if (!next && sessionRef.current === "waiting") endConversation();
+          persistSetting({ wakeWordEnabled: next });
         }}
       />
     </div>
@@ -1026,6 +1120,41 @@ function Reticle({ children }: { children: React.ReactNode }) {
       ))}
       {children}
     </div>
+  );
+}
+
+/**
+ * What JARVIS did on your computer, shown inline.
+ *
+ * Acting on a machine should never be invisible — a refusal especially, since
+ * that's the case where the reply text might otherwise sound like it worked.
+ */
+function MachineAction({
+  action,
+}: {
+  action: { capability: string; device: string; ok: boolean; detail: string; error: string };
+}) {
+  const verb =
+    {
+      "files.write": "Wrote",
+      "files.read": "Read",
+      "files.list": "Listed",
+      "files.search": "Searched",
+      "app.open": "Opened",
+      "system.info": "Checked",
+    }[action.capability] ?? action.capability;
+
+  return (
+    <p className={`readout ${action.ok ? "text-arc/80" : "text-gold"}`}>
+      {action.ok ? "▸" : "⚠"} {verb}
+      {action.detail && (
+        <span className="normal-case tracking-normal text-mist"> {action.detail}</span>
+      )}
+      <span className="normal-case tracking-normal text-mist/70"> on {action.device}</span>
+      {!action.ok && action.error && (
+        <span className="mt-0.5 block normal-case tracking-normal text-gold/80">{action.error}</span>
+      )}
+    </p>
   );
 }
 

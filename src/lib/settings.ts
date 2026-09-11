@@ -26,6 +26,24 @@ export interface Settings {
    * for a tap on the reactor. Off by default — a hot mic should be a choice.
    */
   autoListen?: boolean;
+  /** Wait for “Hey Jarvis” between conversations. Defaults to true. */
+  wakeWordEnabled?: boolean;
+
+  // ---- where speech is synthesised ----
+  /**
+   * "auto" uses your connected machine when one is available and falls back to
+   * the API; "machine" insists on it; "cloud" never uses it.
+   */
+  speechSource?: "auto" | "cloud" | "machine";
+  /**
+   * Whether local speech also needs the bridge unlocked.
+   *
+   * Off by default, and deliberately: speech reads nothing, writes nothing and
+   * costs nothing, so holding it to the same 30-minute re-entry as file access
+   * would mean losing your voice mid-conversation for no safety gained. Turn it
+   * on to hold everything to one rule.
+   */
+  speakNeedsUnlock?: boolean;
 
   // ---- proactive notifications ----
   pushEnabled?: boolean;
@@ -59,6 +77,12 @@ export async function getSettings(userId: string): Promise<Settings> {
       ? data.chatLayout
       : undefined,
     autoListen: typeof data.autoListen === "boolean" ? data.autoListen : undefined,
+    wakeWordEnabled: typeof data.wakeWordEnabled === "boolean" ? data.wakeWordEnabled : undefined,
+    speechSource:
+      data.speechSource === "auto" || data.speechSource === "cloud" || data.speechSource === "machine"
+        ? data.speechSource
+        : undefined,
+    speakNeedsUnlock: typeof data.speakNeedsUnlock === "boolean" ? data.speakNeedsUnlock : undefined,
     pushEnabled: typeof data.pushEnabled === "boolean" ? data.pushEnabled : undefined,
     briefHour: typeof data.briefHour === "number" ? data.briefHour : undefined,
     quietFrom: typeof data.quietFrom === "number" ? data.quietFrom : undefined,

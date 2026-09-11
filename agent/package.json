@@ -1,0 +1,15 @@
+{
+  "name": "jarvis-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The JARVIS bridge agent. Runs on your computer and connects out to your JARVIS.",
+  "type": "module",
+  "bin": { "jarvis-bridge": "./bin/jarvis-bridge.mjs" },
+  "scripts": {
+    "start": "node bin/jarvis-bridge.mjs",
+    "pair": "node bin/jarvis-bridge.mjs pair",
+    "test": "node test/capabilities.test.mjs"
+  },
+  "engines": { "node": ">=20.9.0" },
+  "dependencies": {}
+}

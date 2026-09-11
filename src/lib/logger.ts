@@ -9,7 +9,15 @@
 
 import { prisma } from "./db";
 
-export type EventSource = "chat" | "agenda" | "speak" | "push" | "auth" | "scheduler" | "search";
+export type EventSource =
+  | "chat"
+  | "agenda"
+  | "speak"
+  | "push"
+  | "auth"
+  | "scheduler"
+  | "search"
+  | "bridge";
 
 export async function logEvent(
   source: EventSource,

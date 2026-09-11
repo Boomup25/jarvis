@@ -22,6 +22,7 @@ export default async function ChatPage({
       initialPrompt={q}
       initialLayout={settings.chatLayout ?? "presence"}
       initialAutoListen={settings.autoListen ?? false}
+      initialWakeWordEnabled={settings.wakeWordEnabled ?? true}
     />
   );
 }

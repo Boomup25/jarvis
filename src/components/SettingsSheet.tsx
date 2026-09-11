@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CheckIcon, SearchIcon, MicIcon, SparkIcon } from "./Icons";
 import { NotificationSettings } from "./NotificationSettings";
+import { BridgePanel } from "./BridgePanel";
 import { DEFAULT_SILENCE_MS, readSilenceMs, writeSilenceMs, type VoiceMode } from "./useSpeech";
 import type { ChatLayout } from "./ChatView";
 
@@ -52,6 +53,8 @@ export function SettingsSheet({
   onLayoutChange,
   autoListen,
   onAutoListenChange,
+  wakeWordEnabled,
+  onWakeWordEnabledChange,
 }: {
   open: boolean;
   onClose: () => void;
@@ -62,6 +65,8 @@ export function SettingsSheet({
   onLayoutChange: (layout: ChatLayout) => void;
   autoListen: boolean;
   onAutoListenChange: (on: boolean) => void;
+  wakeWordEnabled: boolean;
+  onWakeWordEnabledChange: (on: boolean) => void;
 }) {
   const [voices, setVoices] = useState<Voice[]>([]);
   const [voiceId, setVoiceId] = useState<string>("");
@@ -201,6 +206,10 @@ export function SettingsSheet({
             <NotificationSettings />
           </div>
 
+          {/* Owner-only and behind its own passphrase; the component renders
+              nothing at all for an account that can't reach the bridge. */}
+          <BridgePanel />
+
           <section className="mb-3">
             <div className="flex items-center gap-2 text-[0.7rem] uppercase tracking-[0.18em] text-mist">
               <SparkIcon className="size-3.5" />
@@ -237,7 +246,7 @@ export function SettingsSheet({
                 <span className="block text-[0.8rem]">Listen as soon as I open it</span>
                 <span className="mt-0.5 block text-[0.65rem] leading-snug text-mist">
                   {autoListen
-                    ? "The reactor starts listening on load."
+                    ? wakeWordEnabled ? 'Waits for “Hey Jarvis” when the page opens.' : "The reactor starts listening on load."
                     : "Tap the reactor to start a conversation."}
                 </span>
               </span>
@@ -260,6 +269,24 @@ export function SettingsSheet({
               <MicIcon className="size-3.5" />
               Voice
             </div>
+            <button
+              onClick={() => onWakeWordEnabledChange(!wakeWordEnabled)}
+              role="switch"
+              aria-checked={wakeWordEnabled}
+              className="mt-2 flex w-full items-center justify-between gap-3 rounded-lg border border-edge px-3 py-2.5 text-left hover:border-arc/40"
+            >
+              <span>
+                <span className="block text-[0.8rem]">Wait for “Hey Jarvis” between conversations</span>
+                <span className="mt-0.5 block text-[0.65rem] leading-snug text-mist">
+                  Say goodbye or leave 30 seconds of quiet to finish. Follow-up questions need no wake phrase.
+                </span>
+              </span>
+              <span className={wakeWordEnabled ? "text-arc" : "text-mist"}>{wakeWordEnabled ? "On" : "Off"}</span>
+            </button>
+            <p className="mt-1.5 text-[0.65rem] leading-snug text-mist">
+              Waiting keeps the microphone on while this page is open. Tap the mic or press Escape to turn it off.
+              Your browser may use an online speech recognition service.
+            </p>
             <div className="mt-2 flex gap-1.5">
               {(["natural", "device"] as VoiceMode[]).map((m) => (
                 <button
@@ -273,6 +300,8 @@ export function SettingsSheet({
                 </button>
               ))}
             </div>
+
+            {voiceMode === "natural" && <SpeechSource />}
 
             {voiceMode === "natural" && (
               <div className="mt-2.5 space-y-2">
@@ -404,6 +433,68 @@ export function SettingsSheet({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Where speech is synthesised. Only meaningful for the natural voice — the
+ * device voice never leaves the browser.
+ */
+function SpeechSource() {
+  const [source, setSource] = useState<"auto" | "cloud" | "machine">("auto");
+  const [machine, setMachine] = useState<{ name: string; engine: string } | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        setSource(json?.settings?.speechSource ?? "auto");
+        setMachine(json?.speechMachine ?? null);
+      })
+      .catch(() => {})
+      .finally(() => setLoaded(true));
+  }, []);
+
+  function choose(next: "auto" | "cloud" | "machine") {
+    setSource(next);
+    fetch("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ speechSource: next }),
+    }).catch(() => {});
+  }
+
+  if (!loaded) return null;
+
+  return (
+    <div className="mt-2.5">
+      <span className="text-[0.7rem] text-mist">Synthesised by</span>
+      <div className="mt-1 flex gap-1.5">
+        {(
+          [
+            ["auto", "Auto"],
+            ["machine", "My computer"],
+            ["cloud", "The API"],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={value}
+            onClick={() => choose(value)}
+            className={`flex-1 rounded-lg border px-2 py-2 text-[0.72rem] transition-colors ${
+              source === value ? "border-arc/50 bg-arc/10 text-arc" : "border-edge text-mist"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <p className="mt-1 text-[0.65rem] leading-snug text-mist">
+        {machine
+          ? `${machine.name} is connected and can speak.`
+          : "No connected machine right now — the API will be used."}
+      </p>
     </div>
   );
 }

@@ -27,6 +27,8 @@ const OWNED = new Set([
   "pushSubscription",
   "notification",
   "usageRecord",
+  "device",
+  "deviceCommand",
 ]);
 
 // What counts as proof the query is scoped to one person.

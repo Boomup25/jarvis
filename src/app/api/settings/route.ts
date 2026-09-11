@@ -1,6 +1,8 @@
 import { requireUser } from "@/lib/session";
 import { getSettings, saveSettings, type Settings } from "@/lib/settings";
 import { VOICE_CATALOGUE, DEFAULT_VOICE_ID } from "@/lib/tts";
+import { isOwnerUser } from "@/lib/bridge";
+import { bridgeContextFor } from "@/lib/bridgeTools";
 
 export const dynamic = "force-dynamic";
 
@@ -8,8 +10,17 @@ export async function GET() {
   const auth = await requireUser();
   if ("denied" in auth) return auth.denied;
   const settings = await getSettings(auth.user.id);
+
+  // So the panel can say whether local speech is actually available rather
+  // than offering an option that would silently fall back.
+  const machine = isOwnerUser(auth.user) ? await bridgeContextFor(auth.user.id) : null;
+
   return Response.json({
     settings,
+    speechMachine:
+      machine && machine.capabilities.includes("speak")
+        ? { name: machine.deviceName, engine: "local" }
+        : null,
     voices: VOICE_CATALOGUE,
     defaults: { voiceId: DEFAULT_VOICE_ID },
     ttsConfigured: Boolean(process.env.OPENROUTER_API_KEY),
@@ -33,6 +44,11 @@ export async function PATCH(req: Request) {
     patch.chatLayout = body.chatLayout;
   }
   if (typeof body.autoListen === "boolean") patch.autoListen = body.autoListen;
+  if (typeof body.wakeWordEnabled === "boolean") patch.wakeWordEnabled = body.wakeWordEnabled;
+  if (body.speechSource === "auto" || body.speechSource === "cloud" || body.speechSource === "machine") {
+    patch.speechSource = body.speechSource;
+  }
+  if (typeof body.speakNeedsUnlock === "boolean") patch.speakNeedsUnlock = body.speakNeedsUnlock;
 
   if (typeof body.pushEnabled === "boolean") patch.pushEnabled = body.pushEnabled;
   if (typeof body.briefHour === "number") patch.briefHour = Math.min(23, Math.max(0, body.briefHour));

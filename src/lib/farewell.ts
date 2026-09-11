@@ -78,6 +78,7 @@ const FAREWELLS: RegExp[] = [
 function normalise(raw: string): string {
   let text = raw
     .toLowerCase()
+    .replace(/[’‘]/g, "'")
     .replace(/[.,!?;:—–-]+/g, " ")
     .replace(ADDRESS, " ")
     .replace(/\s+/g, " ")

@@ -186,6 +186,7 @@ export function useSpeechInput(
   const stop = useCallback(() => finish(true), [finish]);
 
   const start = useCallback(() => {
+    teardown(); // Never leave a second recognizer holding the microphone.
     const Ctor = getRecognitionCtor();
     if (!Ctor) {
       setError(
@@ -220,7 +221,7 @@ export function useSpeechInput(
         let live = "";
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const result = event.results[i];
-          if (result.isFinal) transcriptRef.current += result[0].transcript;
+          if (result.isFinal) transcriptRef.current = `${transcriptRef.current} ${result[0].transcript}`.trim();
           else live += result[0].transcript;
         }
         const now = Date.now();
@@ -237,7 +238,7 @@ export function useSpeechInput(
         // Routine: the engine heard nothing, or we aborted it ourselves.
         if (code === "no-speech" || code === "aborted") return;
         setError(explain(code));
-        finish(Boolean(transcriptRef.current.trim()));
+        finish(false);
       };
 
       rec.onend = () => {
@@ -292,7 +293,7 @@ export function useSpeechInput(
         finish(false);
       }
     }, 250);
-  }, [finish]);
+  }, [finish, teardown]);
 
   return {
     supported,

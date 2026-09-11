@@ -12,6 +12,12 @@ const PUBLIC = [
   "/sw.js",
   "/signup",
   "/api/auth/signup",
+  // The two agent endpoints. These carry no session cookie — the agent
+  // authenticates with a device token in an Authorization header, and both
+  // routes verify it themselves before doing anything. Being listed here
+  // means "the proxy doesn't check", NOT "unauthenticated".
+  "/api/bridge/stream",
+  "/api/bridge/result",
 ];
 
 export async function proxy(req: NextRequest) {

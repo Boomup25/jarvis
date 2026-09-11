@@ -24,8 +24,21 @@ instructed to call before generating anything substantial.
 **Tracks what you actually did.** Mark a workout complete or log a meal, and that
 history feeds back into planning — it knows not to give you legs two days running.
 
-**Talks.** Web Speech API in both directions: tap the mic to dictate, toggle the speaker
-to have replies read back in a British voice where the browser has one.
+**Talks.** Tap the mic to start a conversation, and toggle the speaker for spoken
+replies. With **Wait for “Hey Jarvis” between conversations** enabled (the default),
+a goodbye or 30 seconds of quiet returns JARVIS to wake standby. Say “Hey Jarvis”
+alone or followed by a question to begin again; follow-up questions need no wake
+phrase. Other speech in standby does not create chat or TTS requests. “Stop
+listening,” “turn off the microphone,” the mic button, or Escape turns listening
+off completely; in standby, say “Hey Jarvis, stop listening.” Tap the mic to resume.
+
+**Listen as soon as I open it** starts wake standby on page load when wake mode is
+enabled. Turn wake mode off for the previous tap-to-talk behavior that closes the
+mic after a sign-off or idle timeout. Recognition pauses during replies and while
+settings or history are open. Errors stop listening and require a deliberate
+retry. Wake standby keeps the mic on and uses the browser's speech recognizer,
+which may use an online service; it is not a system-wide offline wake detector.
+The page must remain open, and browser permissions/background restrictions apply.
 
 **Briefs you.** The home tab is a dashboard — the date, an opening line written in
 character, open tasks, weekly workout count, recent pages.
