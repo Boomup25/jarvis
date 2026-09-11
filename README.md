@@ -51,6 +51,12 @@ and the new person gets their own memories, pages and history — completely sep
 everyone else's. The owner pays for the API, so each account carries a monthly message
 quota you can dial up or down per person.
 
+The sign-in page also links to a public `/demo`. It shows fictional dashboard data, a gallery
+of the real Brief, JARVIS, Your week and Library screens, and a small chat. It is deliberately
+isolated from accounts, history, tools, the bridge and computer controls. It accepts short,
+rate-limited messages, uses one fixed free model with no paid fallback, and can read replies
+with the visitor's local browser voice without sending audio requests to the server.
+
 ---
 
 ## Getting it running locally
@@ -124,9 +130,11 @@ src/
     pages/                Saved-page library + individual page view
     memory/               What it knows about you, editable
     login/  signup/       Password sign-in; signup needs an invite code
+    demo/                 Public, isolated portfolio demo
     admin/                Owner only: invites, accounts, quotas, data export
     api/
       chat/route.ts       Streaming loop: NDJSON events, tool calls, memory extraction
+      demo/chat/route.ts  Rate-limited, no-tools demo stream on one free model
       pages/  memory/  tasks/  logs/  briefing/  models/  profile/  conversations/
       invites/  users/    Owner-only account management
       search/  export/    Global search; download everything as JSON

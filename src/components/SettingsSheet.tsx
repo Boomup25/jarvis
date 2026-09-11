@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { CheckIcon, SearchIcon, MicIcon, SparkIcon } from "./Icons";
 import { NotificationSettings } from "./NotificationSettings";
 import { BridgePanel } from "./BridgePanel";
@@ -76,7 +76,11 @@ export function SettingsSheet({
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
   const [saving, setSaving] = useState<string | null>(null);
+  const [modelsOpen, setModelsOpen] = useState(false);
   const [silence, setSilence] = useState(DEFAULT_SILENCE_MS);
+  const [dragOffset, setDragOffset] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const dragRef = useRef<{ startY: number; pointerId: number } | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -185,10 +189,30 @@ export function SettingsSheet({
     writeSilenceMs(ms);
   }
 
+  function startDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    dragRef.current = { startY: event.clientY, pointerId: event.pointerId };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDragging(true);
+  }
+
+  function moveDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!dragRef.current || dragRef.current.pointerId !== event.pointerId) return;
+    setDragOffset(Math.max(0, event.clientY - dragRef.current.startY));
+  }
+
+  function endDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!dragRef.current || dragRef.current.pointerId !== event.pointerId) return;
+    const shouldClose = dragOffset > 110;
+    dragRef.current = null;
+    setDragging(false);
+    setDragOffset(0);
+    if (shouldClose) onClose();
+  }
+
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end">
+    <div className="fixed inset-0 z-50 flex flex-col justify-end lg:items-center lg:justify-center lg:p-8">
       <button
         aria-label="Close settings"
         onClick={onClose}
@@ -198,9 +222,29 @@ export function SettingsSheet({
       {/* One scroll container for the whole sheet. It used to have a shrink-0
           header that new sections kept getting added to, which made them
           unreachable — nothing to scroll them into view. */}
-      <div className="relative flex max-h-[88dvh] flex-col overflow-y-auto overscroll-contain border-t border-edge glass safe-bottom">
+      <div
+        className="relative flex max-h-[88dvh] w-full flex-col overflow-y-auto overscroll-contain border-t border-edge glass safe-bottom lg:max-w-3xl lg:rounded-xl lg:border"
+        style={{
+          transform: `translateY(${dragOffset}px)`,
+          transition: dragging ? "none" : "transform 180ms ease-out",
+        }}
+      >
         <div className="border-b border-edge px-4 pb-3 pt-3">
-          <div className="mx-auto mb-3 h-1 w-9 rounded-full bg-edge" />
+          <div
+            role="button"
+            tabIndex={0}
+            aria-label="Drag down to close settings"
+            onPointerDown={startDrag}
+            onPointerMove={moveDrag}
+            onPointerUp={endDrag}
+            onPointerCancel={endDrag}
+            onKeyDown={(event) => {
+              if (event.key === "Escape" || event.key === "Enter" || event.key === " ") onClose();
+            }}
+            className="mx-auto mb-3 flex h-5 w-12 cursor-grab touch-none items-center justify-center active:cursor-grabbing"
+          >
+            <span className="h-1 w-9 rounded-full bg-edge" />
+          </div>
 
           <div className="mb-3">
             <NotificationSettings />
@@ -366,11 +410,30 @@ export function SettingsSheet({
             </label>
           </section>
 
-          <div className="flex items-center gap-2 text-[0.7rem] uppercase tracking-[0.18em] text-mist">
-            Model
-          </div>
-          <div className="relative mt-2">
-            <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-mist" />
+          <button
+            type="button"
+            onClick={() => setModelsOpen((open) => !open)}
+            aria-expanded={modelsOpen}
+            className="flex w-full items-center justify-between gap-3 text-left"
+          >
+            <span className="flex items-center gap-2 text-[0.7rem] uppercase tracking-[0.18em] text-mist">
+              AI models
+            </span>
+            <span className="flex min-w-0 items-center gap-2 text-[0.7rem] text-mist">
+              <span className="truncate">{data?.current ? data.current.split("/").pop() : "Automatic"}</span>
+              <span className="text-arc">{modelsOpen ? "−" : "+"}</span>
+            </span>
+          </button>
+
+          {!modelsOpen && (
+            <p className="mt-1 text-[0.65rem] text-mist">
+              Choose the model JARVIS uses for replies.
+            </p>
+          )}
+
+        {modelsOpen && <>
+          <div className="relative mt-2 px-4">
+            <SearchIcon className="pointer-events-none absolute left-7 top-1/2 size-4 -translate-y-1/2 text-mist" />
             <input
               ref={searchRef}
               value={query}
@@ -379,7 +442,6 @@ export function SettingsSheet({
               className="w-full rounded-xl border border-edge bg-abyss/70 py-2.5 pl-9 pr-3 text-[0.85rem] placeholder:text-mist/60 focus:border-arc/50 focus:outline-none"
             />
           </div>
-        </div>
 
         <div className="px-4 py-3">
           {loading && <p className="py-8 text-center text-[0.8rem] text-mist">Loading catalogue…</p>}
@@ -432,7 +494,9 @@ export function SettingsSheet({
             <p className="py-8 text-center text-[0.8rem] text-mist">No model matches “{query}”.</p>
           )}
         </div>
+        </>}
       </div>
+    </div>
     </div>
   );
 }

@@ -23,8 +23,8 @@ afternoon.
 
 **The folders it can touch live in this machine's config, not in the database
 and not in the web app.** JARVIS can only ask for things inside the roots you
-list here, so a compromised web session can't widen its own reach. Adding a
-folder means editing the file on this computer.
+list here, so a compromised web session can't widen its own reach. You can add
+or remove roots from the command window after setup without pairing again.
 
 Also refused, and covered by `npm test`:
 
@@ -176,6 +176,18 @@ npm start -- url http://localhost:3000
 ```
 
 ## Adding or changing folders
+
+Use the bridge command window:
+
+```bash
+npm start -- folder list
+npm start -- folder add "C:\\Users\\you\\Documents\\Notes"
+npm start -- folder remove "C:\\Users\\you\\Documents\\Notes"
+```
+
+The add command requires an existing absolute folder and keeps the encrypted
+device token untouched. Restart `npm start` after changing folders so the new
+root is included in the next connection. `folder` and `folders` are both accepted.
 
 Edit `~/.jarvis-bridge/config.json`:
 

@@ -81,6 +81,9 @@ function LoginForm() {
           Create an account
         </Link>
       </p>
+      <Link href="/demo" className="readout text-arc hover:underline">
+        Try the public demo
+      </Link>
     </form>
   );
 }

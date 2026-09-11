@@ -12,6 +12,8 @@ const PUBLIC = [
   "/sw.js",
   "/signup",
   "/api/auth/signup",
+  "/demo",
+  "/api/demo/chat",
   // The two agent endpoints. These carry no session cookie — the agent
   // authenticates with a device token in an Authorization header, and both
   // routes verify it themselves before doing anything. Being listed here

@@ -10,8 +10,8 @@
  * internet to find.
  */
 
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout, argv, exit, env } from "node:process";
 import { hostname, platform } from "node:os";
@@ -23,6 +23,7 @@ import {
   openToken,
   saveConfig,
   sealToken,
+  isDenied,
   serverUrlProblem,
 } from "../src/config.mjs";
 import { SUPPORTED, execute } from "../src/capabilities.mjs";
@@ -32,6 +33,59 @@ const RECONNECT_MIN_MS = 2_000;
 const RECONNECT_MAX_MS = 60_000;
 
 const log = (...args) => console.log(new Date().toISOString().slice(11, 19), ...args);
+
+const HELP = `
+JARVIS bridge commands
+
+  npm run pair
+      Pair this computer with a JARVIS account and save its encrypted token.
+      The live URL, device token, and bridge passphrase are entered privately
+      at prompts; do not put passwords or tokens in the command itself.
+
+  npm start
+      Start the bridge and keep it connected to JARVIS.
+
+  npm start -- help
+  npm start -- /help
+  npm run help
+      Show this help.
+
+  npm start -- url <address>
+      Change the saved JARVIS URL without pairing again.
+      Example: npm start -- url https://your-live-jarvis.example.com
+
+      This changes only the address. It does not take a password or create a
+      new token.
+
+  npm start -- folder add <path>
+      Add another shared folder after setup. Use an absolute path.
+      Example: npm start -- folder add "C:\\Users\\Kerry\\Documents\\Projects"
+
+  npm start -- folder list
+      Show the folders currently shared by this bridge.
+
+  npm start -- folder remove <path>
+      Stop sharing one folder. The token and pairing stay unchanged.
+
+  npm start -- say "<text>" [output.wav]
+      Test the configured voice and write a WAV file.
+      Example: npm start -- say "At your service, sir."
+
+  npm test
+      Run the bridge safety and voice regression tests.
+
+Configuration
+  Saved at: %s
+  Edit speech, folders, and capabilities there when needed.
+
+Machine capabilities offered by the bridge
+  %s
+
+Typical live setup
+  1. In JARVIS: Settings → Bridge → unlock → Pair a machine.
+  2. On this computer: npm run pair
+  3. Start the voice server if using LuxTTS, then run: npm start
+`;
 
 async function ask(question, { silent = false } = {}) {
   const rl = createInterface({ input: stdin, output: stdout, terminal: true });
@@ -290,6 +344,85 @@ async function setUrl(value) {
   console.log("Your device token is untouched. Start it with:  npm start\n");
 }
 
+/* ---- shared folders -------------------------------------------------- */
+
+function folderPath(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return { error: "Enter an absolute folder path." };
+  if (!isAbsolute(raw)) {
+    return { error: "Folder paths must be absolute, for example C:\\Users\\Kerry\\Documents." };
+  }
+
+  const resolved = resolve(raw);
+  if (!existsSync(resolved)) return { error: "That folder does not exist." };
+  try {
+    if (!statSync(resolved).isDirectory()) return { error: "That path is not a folder." };
+    // Store the real path so a symlink cannot make the configured root mean
+    // something different on the next start.
+    return { path: realpathSync.native(resolved) };
+  } catch {
+    return { error: "That folder could not be inspected." };
+  }
+}
+
+async function folders(action, value) {
+  const config = loadConfig();
+  if (!config?.sealed) {
+    console.error(`No pairing found at ${CONFIG_PATH}. Run:  npm run pair`);
+    exit(1);
+  }
+
+  const command = String(action ?? "list").toLowerCase();
+  if (command === "list") {
+    console.log(`\nShared folders (${config.roots.length}):`);
+    console.log(config.roots.length ? config.roots.map((root, i) => `  ${i + 1}. ${root}`).join("\n") : "  none");
+    console.log();
+    return;
+  }
+
+  const checked = folderPath(value);
+  if (checked.error) {
+    console.error(`\n${checked.error}\n`);
+    exit(1);
+  }
+  const root = checked.path;
+  if (isDenied(root, config.denyNames)) {
+    console.error("\nThat folder is on this machine's deny list.\n");
+    exit(1);
+  }
+  const existing = config.roots.map((item) => resolve(item));
+
+  if (command === "add") {
+    if (existing.includes(root)) {
+      console.log(`\nThat folder is already shared:\n  ${root}\n`);
+      return;
+    }
+    saveConfig({ ...config, roots: [...config.roots, root] });
+    console.log(`\nAdded shared folder:\n  ${root}`);
+    console.log("Restart the bridge for the new folder to be offered to JARVIS.\n");
+    return;
+  }
+
+  if (command === "remove" || command === "rm") {
+    const index = existing.indexOf(root);
+    if (index < 0) {
+      console.error(`\nThat folder is not currently shared:\n  ${root}\n`);
+      exit(1);
+    }
+    saveConfig({ ...config, roots: config.roots.filter((_, i) => i !== index) });
+    console.log(`\nStopped sharing:\n  ${root}`);
+    console.log("Restart the bridge for the change to take effect.\n");
+    return;
+  }
+
+  console.error(`\nUnknown folder action "${command}". Use add, list, or remove.\n`);
+  exit(1);
+}
+
+function showHelp() {
+  console.log(HELP, CONFIG_PATH, SUPPORTED.join(", "));
+}
+
 /**
  * Try the configured voice without touching JARVIS.
  *
@@ -323,12 +456,14 @@ async function say(text, outPath) {
   }
 }
 
-const mode = argv[2] ?? "start";
+const mode = (argv[2] ?? "start").toLowerCase();
 if (mode === "pair") await pair();
 else if (mode === "url") await setUrl(argv[3]);
+else if (mode === "folder" || mode === "folders") await folders(argv[3], argv.slice(4).join(" "));
 else if (mode === "say") await say(argv[3], argv[4]);
+else if (mode === "help" || mode === "/help" || mode === "--help" || mode === "-h") showHelp();
 else if (mode === "start") await start();
 else {
-  console.log('Usage: jarvis-bridge [pair|start|url <address>|say "text" [out.wav]]');
+  console.log('Unknown command. Run `npm start -- help` to see all commands.');
   exit(1);
 }

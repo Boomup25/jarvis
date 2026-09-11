@@ -7,6 +7,7 @@
   "bin": { "jarvis-bridge": "./bin/jarvis-bridge.mjs" },
   "scripts": {
     "start": "node bin/jarvis-bridge.mjs",
+    "help": "node bin/jarvis-bridge.mjs help",
     "pair": "node bin/jarvis-bridge.mjs pair",
     "test": "node test/capabilities.test.mjs"
   },
