@@ -19,7 +19,10 @@
     "postinstall": "prisma generate",
     "db:copy": "tsx scripts/migrate-db.ts",
     "audit": "node scripts/audit-scoping.mjs",
-    "test": "tsx scripts/test-farewell.ts && tsx scripts/test-voice-session.ts && tsx scripts/test-demo.ts && node agent/test/capabilities.test.mjs"
+    "test": "tsx scripts/test-farewell.ts && tsx scripts/test-voice-session.ts && tsx scripts/test-demo.ts && node agent/test/capabilities.test.mjs",
+    "desktop:install": "npm --prefix desktop install",
+    "desktop:start": "npm --prefix desktop start",
+    "desktop:dist": "npm --prefix desktop run dist"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",

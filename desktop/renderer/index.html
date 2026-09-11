@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JARVIS Bridge</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div><p class="eyebrow">JARVIS BRIDGE</p><h1>Desktop connection</h1></div>
+      <div class="topbar-actions"><div id="status" class="status stopped">Stopped</div><button id="open-jarvis" class="primary">Open JARVIS</button></div>
+    </header>
+    <main>
+      <section id="setup" class="panel setup-panel hidden">
+        <div class="panel-heading">
+          <div><p class="eyebrow">FIRST RUN</p><h2 id="setup-title">Connect this computer</h2></div>
+          <p id="setup-copy" class="muted">Use the device token from Settings → Bridge in JARVIS.</p>
+        </div>
+        <form id="pair-form" class="form-grid hidden">
+          <label>Live JARVIS URL<input name="serverUrl" value="http://localhost:3000" required /></label>
+          <label>Machine name<input name="name" value="My computer" /></label>
+          <label class="wide">Device token<input name="token" placeholder="jbr_…" required /></label>
+          <label>Passphrase<input name="passphrase" type="password" required /></label>
+          <label>Confirm passphrase<input name="confirm" type="password" required /></label>
+          <label class="wide">Folders to share <span class="muted">(one absolute path per line)</span><textarea name="roots" rows="3" placeholder="C:\Users\Kerry\Desktop\Jarvis Work"></textarea></label>
+          <label class="check wide"><input name="remember" type="checkbox" checked /> Remember the passphrase securely on this Windows account</label>
+          <button class="primary wide" type="submit">Pair and connect</button>
+        </form>
+        <form id="unlock-form" class="form-grid hidden">
+          <label class="wide">Bridge passphrase<input name="passphrase" type="password" required autofocus /></label>
+          <label class="check wide"><input name="remember" type="checkbox" checked /> Remember the passphrase securely on this Windows account</label>
+          <button class="primary wide" type="submit">Unlock and connect</button>
+        </form>
+        <p id="setup-error" class="error"></p>
+      </section>
+      <section class="panel command-panel">
+        <div class="panel-heading">
+          <div><p class="eyebrow">COMMAND WINDOW</p><h2>Bridge console</h2></div>
+          <label class="startup"><input id="startup" type="checkbox" /> Start with Windows</label>
+        </div>
+        <pre id="output" class="output" aria-live="polite"></pre>
+        <form id="command-form" class="command-form">
+          <span class="prompt">&gt;</span><input id="command" autocomplete="off" placeholder="Type help for commands…" /><button type="submit">Run</button>
+        </form>
+      </section>
+      <section class="panel server-panel">
+        <div class="panel-heading">
+          <div><p class="eyebrow">CONNECTION</p><h2>JARVIS server</h2></div>
+          <span class="muted">Change this without pairing again</span>
+        </div>
+        <form id="server-form" class="server-form">
+          <input id="server-url" type="url" placeholder="https://your-live-jarvis.example.com" aria-label="JARVIS server URL" required />
+          <button type="submit">Save address</button>
+        </form>
+        <p id="server-help" class="muted server-help">Use your deployed HTTPS address here. localhost only works while your JARVIS server is running on this PC.</p>
+      </section>
+    </main>
+    <script src="./app.js"></script>
+  </body>
+</html>

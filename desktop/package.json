@@ -1,0 +1,44 @@
+{
+  "name": "jarvis-desktop",
+  "version": "0.1.3",
+  "private": true,
+  "description": "Windows desktop launcher for the JARVIS bridge",
+  "main": "main.mjs",
+  "type": "module",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^37.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.jarvis.bridge",
+    "productName": "JARVIS Bridge",
+    "files": [
+      "main.mjs",
+      "preload.cjs",
+      "renderer/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../agent/bin",
+        "to": "agent/bin"
+      },
+      {
+        "from": "../agent/src",
+        "to": "agent/src"
+      }
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Markdown } from "./Markdown";
-import { useSpeechInput, useSpeechOutput } from "./useSpeech";
+import { isElectron, useSpeechInput, useSpeechOutput } from "./useSpeech";
 import { useMicLevel } from "./useMicLevel";
 import { ReactorOrb, type OrbState } from "./ReactorOrb";
 import { SettingsSheet } from "./SettingsSheet";
@@ -631,6 +631,15 @@ export function ChatView({
       {mic.error && (
         <p className="mt-4 border border-gold/35 bg-gold/[0.07] px-3 py-2 text-[0.78rem] leading-snug text-gold">
           {mic.error}
+          {isElectron() && (
+            <button
+              type="button"
+              onClick={() => window.open(window.location.href, "_blank", "noopener,noreferrer")}
+              className="mt-2 block border border-gold/40 px-2.5 py-1.5 text-[0.7rem] uppercase tracking-wider text-gold hover:border-gold"
+            >
+              Open browser for voice
+            </button>
+          )}
         </p>
       )}
       {error && (

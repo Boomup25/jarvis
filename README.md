@@ -118,6 +118,22 @@ Open the Railway URL in Safari or Chrome on your phone and use *Add to Home Scre
 The manifest sets it to standalone display, so it opens without browser chrome and
 behaves like an app.
 
+### Run the Windows bridge desktop app
+
+The repository also includes a desktop launcher for the bridge. It provides a
+pairing form, connection logs, folder commands, voice testing, and a **Start
+with Windows** option:
+
+```powershell
+npm run desktop:install
+npm run desktop:start
+```
+
+Use `npm run desktop:dist` to build a Windows installer. The desktop app uses
+the same encrypted bridge token as the command-line agent. If you enable
+automatic startup, its optional remembered passphrase is protected with
+Windows credential encryption rather than stored as plain text.
+
 ---
 
 ## How it's put together

@@ -38,6 +38,14 @@ export function isMobile(): boolean {
   return isIOS() || /Android/i.test(navigator.userAgent);
 }
 
+/** Electron exposes Chromium's recognizer, but its speech service is not
+ * available to embedded windows on Windows. Keep this separate from the
+ * mobile check so the UI can offer a browser fallback instead of blaming the
+ * user's internet connection. */
+export function isElectron(): boolean {
+  return typeof navigator !== "undefined" && /\bElectron\/\d/i.test(navigator.userAgent);
+}
+
 /** Turn a SpeechRecognition error code into something a human can act on. */
 function explain(code: string): string {
   switch (code) {
@@ -52,7 +60,9 @@ function explain(code: string): string {
     case "audio-capture":
       return "No microphone was found.";
     case "network":
-      return "Speech recognition needs a network connection and couldn't reach the service.";
+      return isElectron()
+        ? "The embedded Windows app cannot use its browser speech service. Open JARVIS in Chrome or Edge for microphone input."
+        : "Speech recognition needs a network connection and couldn't reach the service.";
     case "language-not-supported":
       return "Your device doesn't have a voice model for this language.";
     default:

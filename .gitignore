@@ -36,6 +36,7 @@ scratch/
 *.sln.docstates
 
 # misc
+desktop/dist/
 *.tsbuildinfo
 .DS_Store
 Thumbs.db
