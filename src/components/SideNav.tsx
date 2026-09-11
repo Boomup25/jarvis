@@ -12,12 +12,14 @@ import {
   LogoutIcon,
   PeopleIcon,
   SearchIcon,
+  SparkIcon,
 } from "./Icons";
 import { isMac, openSearch } from "./commandBus";
 
 const TABS = [
   { href: "/", label: "Brief", Icon: HomeIcon },
   { href: "/chat", label: "JARVIS", Icon: ChatIcon },
+  { href: "/week", label: "Your week", Icon: SparkIcon },
   { href: "/pages", label: "Library", Icon: LibraryIcon },
   { href: "/memory", label: "Memory", Icon: BrainIcon },
 ];

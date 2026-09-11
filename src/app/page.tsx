@@ -12,7 +12,7 @@ import {
   SectionTitle,
   StatTile,
 } from "@/components/DashboardCards";
-import { CheckIcon, PAGE_ICONS } from "@/components/Icons";
+import { CheckIcon, PAGE_ICONS, SparkIcon } from "@/components/Icons";
 import { DashboardHeaderActions } from "@/components/DashboardHeaderActions";
 
 export const dynamic = "force-dynamic";
@@ -115,6 +115,21 @@ export default async function Dashboard() {
               <StatTile label="Pages" value={insights.totals.pages} accent="var(--color-violet)" />
               <StatTile label="Memories" value={insights.totals.memories} accent="var(--color-jade)" />
             </section>
+
+            {/* The bottom tab bar is full at four, so the week lives behind a
+                link here rather than a fifth tab nobody can reach with a thumb. */}
+            <Link
+              href="/week"
+              className="notch-tr mt-2 flex items-center justify-between gap-3 border border-edge bg-panel/40 px-3.5 py-3 transition-colors hover:border-arc/40"
+            >
+              <span className="flex items-center gap-2.5 text-[0.85rem]">
+                <SparkIcon className="size-4 shrink-0 text-gold" aria-hidden />
+                Your week in full
+              </span>
+              <span className="readout">
+                {insights.thisWeek} {insights.thisWeek === 1 ? "session" : "sessions"} →
+              </span>
+            </Link>
 
             {/* ---- charts ---------------------------------------------- */}
             {insights.totals.logs > 0 ? (

@@ -90,7 +90,10 @@ export function writeSilenceMs(ms: number) {
  * but only one instance may exist at a time and only after the previous one has
  * released the microphone — respawning instantly is what made this flaky.
  */
-export function useSpeechInput(onFinal: (text: string) => void) {
+export function useSpeechInput(
+  onFinal: (text: string) => void,
+  opts?: { keepAlive?: boolean }
+) {
   const [supported, setSupported] = useState(false);
   const [listening, setListening] = useState(false);
   const [interim, setInterim] = useState("");
@@ -109,6 +112,17 @@ export function useSpeechInput(onFinal: (text: string) => void) {
   const genRef = useRef(0);
   const finalRef = useRef(onFinal);
   finalRef.current = onFinal;
+
+  /**
+   * True while a hands-free conversation is open.
+   *
+   * It changes two behaviours. The microphone respawns through silence instead
+   * of only inside the send window, and the "I didn't hear anything" bail-out
+   * is suppressed — in a conversation, a pause between turns is normal, and
+   * ending the session is the view's decision, not the recogniser's.
+   */
+  const keepAliveRef = useRef(false);
+  keepAliveRef.current = opts?.keepAlive ?? false;
 
   useEffect(() => {
     setSupported(Boolean(getRecognitionCtor()));
@@ -231,7 +245,10 @@ export function useSpeechInput(onFinal: (text: string) => void) {
         // Still inside the silence window: the browser ended the session, not
         // the user. Respawn — but give the mic a beat to actually release,
         // otherwise start() throws InvalidStateError and dictation dies.
-        if (Date.now() - lastSoundRef.current < readSilenceMs()) {
+        //
+        // In a conversation we respawn regardless of how long it's been quiet,
+        // because the microphone is meant to stay open between turns.
+        if (keepAliveRef.current || Date.now() - lastSoundRef.current < readSilenceMs()) {
           respawnRef.current = setTimeout(spawn, 250);
         }
       };
@@ -264,7 +281,13 @@ export function useSpeechInput(onFinal: (text: string) => void) {
         finish(true);
       }
       // Nothing heard at all after twice the window — stop, and say why.
-      if (quietFor >= readSilenceMs() * 2 + 2000 && !transcriptRef.current.trim()) {
+      // Except in a conversation, where waiting quietly is the normal state
+      // between turns and the view runs its own, much longer, idle timeout.
+      if (
+        !keepAliveRef.current &&
+        quietFor >= readSilenceMs() * 2 + 2000 &&
+        !transcriptRef.current.trim()
+      ) {
         setError("I didn't hear anything. Check the mic permission for this site.");
         finish(false);
       }
@@ -373,11 +396,36 @@ export function useSpeechOutput() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const unlockedRef = useRef(false);
 
+  /**
+   * Live loudness of the reply, 0..1, for the reactor to pulse against.
+   *
+   * A ref rather than state on purpose: this updates every animation frame,
+   * and putting it through React would re-render the whole chat view 60 times
+   * a second. The orb reads it inside its own draw loop instead.
+   */
+  const amplitudeRef = useRef(0);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+
   const bufferRef = useRef("");
   const consumedRef = useRef(0);
   const spokenRef = useRef(0);
   const queueRef = useRef<QueueItem[]>([]);
   const playingRef = useRef(false);
+
+  /**
+   * True from the first word of a reply until the last one has been heard.
+   *
+   * `speaking` alone isn't enough to answer "is JARVIS still talking?" — it
+   * drops to false in the gap between two audio chunks while the next one is
+   * still being synthesised, and again between the stream ending and the final
+   * sentence being queued. Anything that waits for silence (the conversation
+   * loop reopening the microphone, most of all) has to watch this instead, or
+   * it opens the mic into the middle of a sentence.
+   */
+  const [pending, setPending] = useState(false);
+  /** Whether a reply is still streaming in, i.e. more text may yet arrive. */
+  const feedOpenRef = useRef(false);
   const urlsRef = useRef<string[]>([]);
   const controllersRef = useRef<AbortController[]>([]);
   const genRef = useRef(0);
@@ -437,10 +485,49 @@ export function useSpeechOutput() {
     };
   }, []);
 
+  /**
+   * Routes the audio element through an AnalyserNode so the reactor can pulse
+   * to the real waveform instead of a synthetic sine.
+   *
+   * Called from unlock() because an AudioContext needs a gesture to start, and
+   * because createMediaElementSource takes over the element's output — if the
+   * context were left suspended, nothing would be audible at all. Any failure
+   * here is swallowed: the orb just falls back to its own envelope.
+   */
+  const attachAnalyser = useCallback(() => {
+    if (audioCtxRef.current) return;
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    try {
+      const Ctor =
+        window.AudioContext ??
+        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!Ctor) return;
+
+      const ctx = new Ctor();
+      const source = ctx.createMediaElementSource(audio);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.6;
+
+      source.connect(analyser);
+      analyser.connect(ctx.destination);
+
+      audioCtxRef.current = ctx;
+      analyserRef.current = analyser;
+    } catch {
+      /* CORS-tainted, unsupported, or already sourced — synthetic envelope it is */
+    }
+  }, []);
+
   /** MUST be called synchronously inside a click/tap. */
   const unlock = useCallback(() => {
     if (unlockedRef.current) return;
     unlockedRef.current = true;
+
+    attachAnalyser();
+    void audioCtxRef.current?.resume().catch(() => {});
 
     try {
       const nav = navigator as Navigator & { audioSession?: { type: string } };
@@ -468,7 +555,44 @@ export function useSpeechOutput() {
         /* ignore */
       }
     }
-  }, []);
+  }, [attachAnalyser]);
+
+  // Sample the waveform while a reply plays. Only runs during speech, so
+  // there's no idle animation frame burning battery between turns.
+  useEffect(() => {
+    if (!speaking) {
+      amplitudeRef.current = 0;
+      return;
+    }
+    const analyser = analyserRef.current;
+    // Device voice has no analyser — onboundary above drives it instead, and
+    // we only need to decay what that set.
+    const samples = analyser ? new Uint8Array(analyser.frequencyBinCount) : null;
+
+    let raf = 0;
+    const tick = () => {
+      if (analyser && samples) {
+        analyser.getByteTimeDomainData(samples);
+        let sum = 0;
+        for (let i = 0; i < samples.length; i++) {
+          const v = (samples[i] - 128) / 128;
+          sum += v * v;
+        }
+        // RMS runs quiet for speech; scale it into the orb's 0..1 range.
+        const rms = Math.sqrt(sum / samples.length);
+        amplitudeRef.current = Math.min(1, rms * 3.4);
+      } else {
+        amplitudeRef.current *= 0.9; // decay between word boundaries
+      }
+      raf = requestAnimationFrame(tick);
+    };
+
+    raf = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(raf);
+      amplitudeRef.current = 0;
+    };
+  }, [speaking]);
 
   const reset = useCallback(() => {
     genRef.current++;
@@ -491,7 +615,9 @@ export function useSpeechOutput() {
       audio.pause();
       audio.onended = null;
     }
+    feedOpenRef.current = false;
     setSpeaking(false);
+    setPending(false);
   }, [reset]);
 
   const speakDevice = useCallback((text: string) => {
@@ -500,9 +626,28 @@ export function useSpeechOutput() {
     if (voiceRef.current) utterance.voice = voiceRef.current;
     utterance.rate = 1.02;
     utterance.pitch = 0.92;
-    utterance.onstart = () => setSpeaking(true);
-    utterance.onend = () => setSpeaking(false);
-    utterance.onerror = () => setSpeaking(false);
+    const settle = () => {
+      setSpeaking(false);
+      amplitudeRef.current = 0;
+      // The reply is over only when nothing is queued and no more text is
+      // coming — the browser keeps its own utterance queue behind this.
+      if (!feedOpenRef.current && !speechSynthesis.pending && !speechSynthesis.speaking) {
+        setPending(false);
+      }
+    };
+
+    utterance.onstart = () => {
+      setSpeaking(true);
+      setPending(true);
+    };
+    utterance.onend = settle;
+    utterance.onerror = settle;
+    // speechSynthesis exposes no waveform, but it does fire on each word.
+    // Kicking the amplitude per word gives the orb a real speech rhythm
+    // rather than a sine that ignores what's being said.
+    utterance.onboundary = () => {
+      amplitudeRef.current = 0.55 + Math.random() * 0.3;
+    };
     speechSynthesis.speak(utterance);
   }, []);
 
@@ -545,11 +690,16 @@ export function useSpeechOutput() {
     if (!item) {
       playingRef.current = false;
       setSpeaking(false);
+      // Only truly finished once no more text is coming. While the reply is
+      // still streaming, an empty queue just means we're waiting on the next
+      // chunk's synthesis.
+      if (!feedOpenRef.current) setPending(false);
       return;
     }
 
     playingRef.current = true;
     setSpeaking(true);
+    setPending(true);
 
     void item.audio.then((url) => {
       if (gen !== genRef.current) return;
@@ -607,11 +757,22 @@ export function useSpeechOutput() {
 
   /** Called once the reply has finished streaming. */
   const endFeed = useCallback(() => {
-    if (!enabledRef.current) return;
-    if (spokenRef.current >= SPEAK_BUDGET) return;
+    // The stream is over, so an empty queue from here on really is the end.
+    feedOpenRef.current = false;
+    if (!enabledRef.current) {
+      setPending(false);
+      return;
+    }
+    if (spokenRef.current >= SPEAK_BUDGET) {
+      if (!playingRef.current && queueRef.current.length === 0) setPending(false);
+      return;
+    }
     const [chunk] = takeChunk(bufferRef.current, true);
     bufferRef.current = "";
-    if (!chunk) return;
+    if (!chunk) {
+      if (!playingRef.current && queueRef.current.length === 0) setPending(false);
+      return;
+    }
     spokenRef.current += chunk.length;
     if (modeRef.current === "device") speakDevice(chunk);
     else enqueue(chunk);
@@ -621,6 +782,13 @@ export function useSpeechOutput() {
   const startFeed = useCallback(() => {
     shutUp();
     setError(null);
+    if (enabledRef.current) {
+      // Claim the floor for the whole reply up front. Without this there's a
+      // window between the first token arriving and the first audio chunk
+      // being ready where nothing looks busy.
+      feedOpenRef.current = true;
+      setPending(true);
+    }
   }, [shutUp]);
 
   /** One-shot, for the settings preview. */
@@ -670,6 +838,8 @@ export function useSpeechOutput() {
     setMode,
     supported,
     speaking,
+    /** Still mid-reply, including the gaps between audio chunks. */
+    pending,
     error,
     toggle,
     speak,
@@ -678,5 +848,7 @@ export function useSpeechOutput() {
     endFeed,
     shutUp,
     unlock,
+    /** Live loudness of the reply, 0..1. Read inside animation loops only. */
+    amplitudeRef,
   };
 }

@@ -123,6 +123,110 @@ export function ActivityHeatmap({ cells }: { cells: DayCell[] }) {
 }
 
 /**
+ * This week, day by day. Single series, so no legend — the caption names it,
+ * and today carries the bright step plus the only direct label. Days still to
+ * come are drawn as empty slots rather than zeros, so an unfinished week
+ * doesn't read as a failed one.
+ */
+export function WeekDays({
+  days,
+}: {
+  days: { label: string; workouts: number; other: number; future: boolean; today: boolean }[];
+}) {
+  const [hover, setHover] = useState<number | null>(null);
+  const max = Math.max(1, ...days.map((d) => d.workouts));
+  const total = days.reduce((sum, d) => sum + d.workouts, 0);
+  const logged = days.filter((d) => d.workouts > 0);
+
+  return (
+    <figure className="m-0">
+      <figcaption className="flex items-baseline justify-between">
+        <h2 className="text-[0.7rem] uppercase tracking-[0.18em] text-mist">Sessions this week</h2>
+        <span className="text-[0.68rem] text-mist" aria-live="polite">
+          {hover !== null
+            ? `${days[hover].label} · ${days[hover].workouts || "nothing"}${
+                days[hover].other ? ` · ${days[hover].other} other` : ""
+              }`
+            : `${total} total`}
+        </span>
+      </figcaption>
+
+      <div className="mt-6 flex h-20 items-end gap-[2px]">
+        {days.map((day, i) => {
+          const heightPct = day.workouts === 0 ? 3 : Math.max(10, (day.workouts / max) * 100);
+          return (
+            <div
+              key={day.label}
+              onMouseEnter={() => setHover(i)}
+              onMouseLeave={() => setHover(null)}
+              onFocus={() => setHover(i)}
+              onBlur={() => setHover(null)}
+              tabIndex={day.workouts ? 0 : -1}
+              className="relative flex h-full flex-1 items-end outline-none"
+            >
+              <div
+                role="img"
+                aria-label={`${day.label}: ${day.workouts} sessions`}
+                className="w-full rounded-t-[4px] transition-opacity"
+                style={{
+                  height: `${heightPct}%`,
+                  background: day.future
+                    ? "color-mix(in srgb, var(--color-edge) 45%, transparent)"
+                    : day.today
+                      ? "var(--color-viz-4)"
+                      : "var(--color-viz-2)",
+                  opacity: hover === null || hover === i ? 1 : 0.45,
+                }}
+              />
+              {day.today && day.workouts > 0 && (
+                <span className="absolute -top-[18px] left-1/2 -translate-x-1/2 font-mono text-[0.65rem] text-arc">
+                  {day.workouts}
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-1.5 flex gap-[2px]">
+        {days.map((day) => (
+          <span
+            key={day.label}
+            className={`flex-1 text-center text-[0.6rem] ${day.today ? "text-arc" : "text-mist"}`}
+          >
+            {day.label}
+          </span>
+        ))}
+      </div>
+
+      {logged.length > 0 && (
+        <details className="mt-2">
+          <summary className="cursor-pointer text-[0.65rem] text-mist hover:text-frost">
+            View as table
+          </summary>
+          <table className="mt-1.5 w-full text-[0.7rem]">
+            <thead>
+              <tr className="text-mist">
+                <th className="py-1 text-left font-normal">Day</th>
+                <th className="py-1 text-right font-normal">Sessions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {logged.map((d) => (
+                <tr key={d.label} className="border-t border-edge/50">
+                  <td className="py-1">{d.label}</td>
+                  <td className="py-1 text-right font-mono">{d.workouts}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+      )}
+    </figure>
+  );
+}
+
+/**
  * Weekly session count. Single series, so no legend — the caption names it.
  * The current week is the point, so it carries the bright step and the only
  * direct label; prior weeks recede to a dimmer step of the same hue.

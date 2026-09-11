@@ -21,6 +21,7 @@ export function ReactorOrb({
   activityAt = 0,
   onPress,
   pressLabel = "Talk to JARVIS",
+  amplitudeRef,
   className,
 }: {
   state?: OrbState;
@@ -36,6 +37,11 @@ export function ReactorOrb({
   onPress?: () => void;
   /** Accessible label for the button form. */
   pressLabel?: string;
+  /**
+   * Live loudness of the spoken reply, 0..1, read every frame. Passed as a ref
+   * rather than a prop value so the 60fps signal never goes through React.
+   */
+  amplitudeRef?: { current: number };
   className?: string;
 }) {
   /**
@@ -55,9 +61,12 @@ export function ReactorOrb({
   /** Timestamp of the last tap — drives the impact ripple. */
   const pressRef = useRef(0);
 
+  const amplitudeSourceRef = useRef<{ current: number } | undefined>(amplitudeRef);
+
   stateRef.current = state;
   levelRef.current = level;
   activityRef.current = activityAt;
+  amplitudeSourceRef.current = amplitudeRef;
 
   useEffect(() => {
     const canvas = canvasNode;
@@ -143,9 +152,18 @@ export function ReactorOrb({
         case "thinking":
           target = 0.42 + Math.sin(t * 5.5) * 0.12 + Math.sin(t * 8.3) * 0.06;
           break;
-        case "speaking":
-          target = 0.4 + Math.abs(Math.sin(t * 6.1)) * 0.32 + Math.abs(Math.sin(t * 11.7)) * 0.14;
+        case "speaking": {
+          const amp = amplitudeSourceRef.current?.current ?? 0;
+          target =
+            amp > 0.004
+              ? // Real waveform: the orb swells on vowels and settles between
+                // words, so it looks like it's saying the words you're hearing.
+                0.3 + amp * 1.15
+              : // No analyser (device voice before its first word, or a browser
+                // that refused the audio graph) — fall back to an envelope.
+                0.4 + Math.abs(Math.sin(t * 6.1)) * 0.32 + Math.abs(Math.sin(t * 11.7)) * 0.14;
           break;
+        }
         default:
           target = 0.14 + Math.sin(t * 0.9) * 0.07; // breathing at rest
       }

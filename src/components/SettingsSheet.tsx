@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CheckIcon, SearchIcon, MicIcon } from "./Icons";
+import { CheckIcon, SearchIcon, MicIcon, SparkIcon } from "./Icons";
 import { NotificationSettings } from "./NotificationSettings";
 import { DEFAULT_SILENCE_MS, readSilenceMs, writeSilenceMs, type VoiceMode } from "./useSpeech";
+import type { ChatLayout } from "./ChatView";
 
 interface PickerModel {
   id: string;
@@ -47,12 +48,20 @@ export function SettingsSheet({
   onModelChange,
   voiceMode,
   onVoiceModeChange,
+  layout,
+  onLayoutChange,
+  autoListen,
+  onAutoListenChange,
 }: {
   open: boolean;
   onClose: () => void;
   onModelChange: (id: string | null) => void;
   voiceMode: VoiceMode;
   onVoiceModeChange: (mode: VoiceMode) => void;
+  layout: ChatLayout;
+  onLayoutChange: (layout: ChatLayout) => void;
+  autoListen: boolean;
+  onAutoListenChange: (on: boolean) => void;
 }) {
   const [voices, setVoices] = useState<Voice[]>([]);
   const [voiceId, setVoiceId] = useState<string>("");
@@ -191,6 +200,60 @@ export function SettingsSheet({
           <div className="mb-3">
             <NotificationSettings />
           </div>
+
+          <section className="mb-3">
+            <div className="flex items-center gap-2 text-[0.7rem] uppercase tracking-[0.18em] text-mist">
+              <SparkIcon className="size-3.5" />
+              The JARVIS page
+            </div>
+
+            <div className="mt-2 flex gap-1.5">
+              {(
+                [
+                  ["presence", "Presence", "Reactor centre stage, live captions"],
+                  ["transcript", "Transcript", "Reactor above a scrolling history"],
+                ] as [ChatLayout, string, string][]
+              ).map(([value, label, note]) => (
+                <button
+                  key={value}
+                  onClick={() => onLayoutChange(value)}
+                  className={`flex-1 rounded-lg border px-2 py-2 text-left transition-colors ${
+                    layout === value ? "border-arc/50 bg-arc/10 text-arc" : "border-edge text-mist"
+                  }`}
+                >
+                  <span className="block text-[0.75rem]">{label}</span>
+                  <span className="mt-0.5 block text-[0.62rem] leading-snug opacity-70">{note}</span>
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => onAutoListenChange(!autoListen)}
+              role="switch"
+              aria-checked={autoListen}
+              className="mt-2 flex w-full items-center gap-3 rounded-lg border border-edge px-3 py-2.5 text-left transition-colors hover:border-arc/40"
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block text-[0.8rem]">Listen as soon as I open it</span>
+                <span className="mt-0.5 block text-[0.65rem] leading-snug text-mist">
+                  {autoListen
+                    ? "The reactor starts listening on load."
+                    : "Tap the reactor to start a conversation."}
+                </span>
+              </span>
+              <span
+                className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
+                  autoListen ? "bg-arc" : "bg-edge"
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 size-4 rounded-full bg-void transition-all ${
+                    autoListen ? "left-[1.125rem]" : "left-0.5"
+                  }`}
+                />
+              </span>
+            </button>
+          </section>
 
           <section className="mb-3">
             <div className="flex items-center gap-2 text-[0.7rem] uppercase tracking-[0.18em] text-mist">

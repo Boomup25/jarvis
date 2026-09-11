@@ -15,6 +15,18 @@ export interface Settings {
   /** Overrides the delivery description in src/lib/tts.ts. */
   voiceInstructions?: string;
 
+  // ---- how the JARVIS page behaves ----
+  /**
+   * "presence" puts the reactor centre stage with live captions of the current
+   * exchange; "transcript" pins it above a scrolling history. Default presence.
+   */
+  chatLayout?: "presence" | "transcript";
+  /**
+   * Open the microphone as soon as the JARVIS page loads, rather than waiting
+   * for a tap on the reactor. Off by default — a hot mic should be a choice.
+   */
+  autoListen?: boolean;
+
   // ---- proactive notifications ----
   pushEnabled?: boolean;
   /** Local hour (0-23) the morning brief goes out. */
@@ -43,6 +55,10 @@ export async function getSettings(userId: string): Promise<Settings> {
       typeof data.voiceInstructions === "string" && data.voiceInstructions
         ? data.voiceInstructions
         : undefined,
+    chatLayout: data.chatLayout === "transcript" || data.chatLayout === "presence"
+      ? data.chatLayout
+      : undefined,
+    autoListen: typeof data.autoListen === "boolean" ? data.autoListen : undefined,
     pushEnabled: typeof data.pushEnabled === "boolean" ? data.pushEnabled : undefined,
     briefHour: typeof data.briefHour === "number" ? data.briefHour : undefined,
     quietFrom: typeof data.quietFrom === "number" ? data.quietFrom : undefined,

@@ -29,6 +29,11 @@ export async function PATCH(req: Request) {
     patch.voiceMode = body.voiceMode;
   }
 
+  if (body.chatLayout === "presence" || body.chatLayout === "transcript") {
+    patch.chatLayout = body.chatLayout;
+  }
+  if (typeof body.autoListen === "boolean") patch.autoListen = body.autoListen;
+
   if (typeof body.pushEnabled === "boolean") patch.pushEnabled = body.pushEnabled;
   if (typeof body.briefHour === "number") patch.briefHour = Math.min(23, Math.max(0, body.briefHour));
   if (typeof body.quietFrom === "number") patch.quietFrom = Math.min(23, Math.max(0, body.quietFrom));
