@@ -48,7 +48,11 @@ const FAREWELLS: RegExp[] = [
   /^(i )?appreciate (it|that|you)$/,
 
   // explicit "we're finished"
-  /^that'?s (all|it|everything|enough|great|perfect|good|fine|brilliant|lovely)$/,
+  // Natural closings often add a final thank-you: “no, that's it, thank you”.
+  // The whole-utterance match keeps this from catching a real request such as
+  // “that's all I need for now, but what about tomorrow?”.
+  /^that'?s (all|it|everything)( (thanks?|thank you))?$/,
+  /^that'?s (enough|great|perfect|good|fine|brilliant|lovely)$/,
   /^that'?ll (be all|do)$/,
   /^that is all$/,
   /^(i'?m|we'?re) (all )?(done|good|set|finished)$/,
