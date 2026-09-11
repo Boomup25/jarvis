@@ -16,8 +16,16 @@
     },
     "plugins": [
       "expo-secure-store",
-      "expo-av",
-      "expo-asset"
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "JARVIS uses the microphone when you choose to speak.",
+          "enableBackgroundPlayback": false,
+          "enableBackgroundRecording": false
+        }
+      ],
+      "expo-asset",
+      "expo-status-bar"
     ]
   }
 }

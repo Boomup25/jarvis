@@ -3,6 +3,9 @@
 This is the first native client slice: secure login, chat, bridge voice status,
 and playback of the same JARVIS audio returned by `/api/speak`.
 
+The project targets the current Expo SDK 57 release so it can open in the
+current Expo Go app.
+
 ```bash
 cd mobile
 npm install

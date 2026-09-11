@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { Audio } from "expo-av";
-import * as FileSystem from "expo-file-system";
+import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from "expo-audio";
+import * as FileSystem from "expo-file-system/legacy";
 import * as SecureStore from "expo-secure-store";
 import { Buffer } from "buffer";
 import { StatusBar } from "expo-status-bar";
@@ -59,14 +59,14 @@ function LoginScreen(props: { serverUrl: string; setServerUrl: (v: string) => vo
 
 function ChatScreen({ session, onLogout }: { session: Session; onLogout: () => void }) {
   const [messages, setMessages] = useState<Message[]>([]); const [conversationId, setConversationId] = useState<string | undefined>(); const [input, setInput] = useState(""); const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [voiceStatus, setVoiceStatus] = useState("Checking voice"); const [bridgeOnline, setBridgeOnline] = useState(false);
-  const scrollRef = useRef<ScrollView>(null); const soundRef = useRef<Audio.Sound | null>(null);
-  useEffect(() => { void Audio.setAudioModeAsync({ playsInSilentModeIOS: true, staysActiveInBackground: false }); void fetch(`${session.baseUrl}/api/settings`, { headers: { Authorization: `Bearer ${session.token}` } }).then((r) => r.json()).then((data) => { const machine = Boolean(data.speechMachine); setBridgeOnline(machine); setVoiceStatus(machine ? "LuxTTS · Windows bridge" : data.ttsConfigured ? "Cloud voice" : "Voice unavailable"); }).catch(() => setVoiceStatus("Voice status unavailable")); return () => { void soundRef.current?.unloadAsync(); }; }, [session]);
+  const scrollRef = useRef<ScrollView>(null); const soundRef = useRef<AudioPlayer | null>(null);
+  useEffect(() => { void setAudioModeAsync({ playsInSilentMode: true, shouldPlayInBackground: false, interruptionMode: "doNotMix" }); void fetch(`${session.baseUrl}/api/settings`, { headers: { Authorization: `Bearer ${session.token}` } }).then((r) => r.json()).then((data) => { const machine = Boolean(data.speechMachine); setBridgeOnline(machine); setVoiceStatus(machine ? "LuxTTS · Windows bridge" : data.ttsConfigured ? "Cloud voice" : "Voice unavailable"); }).catch(() => setVoiceStatus("Voice status unavailable")); return () => { soundRef.current?.remove(); soundRef.current = null; }; }, [session]);
 
   async function speak(text: string) {
     const response = await fetch(`${session.baseUrl}/api/speak`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.token}` }, body: JSON.stringify({ text }) });
     if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || "Voice unavailable");
     const mime = response.headers.get("content-type") || "audio/mpeg"; const extension = mime.includes("wav") ? "wav" : "mp3"; const path = `${FileSystem.cacheDirectory}jarvis-reply.${extension}`;
-    await FileSystem.writeAsStringAsync(path, Buffer.from(await response.arrayBuffer()).toString("base64"), { encoding: FileSystem.EncodingType.Base64 }); await soundRef.current?.unloadAsync(); const created = await Audio.Sound.createAsync({ uri: path }, { shouldPlay: true }); soundRef.current = created.sound;
+    await FileSystem.writeAsStringAsync(path, Buffer.from(await response.arrayBuffer()).toString("base64"), { encoding: FileSystem.EncodingType.Base64 }); soundRef.current?.remove(); const player = createAudioPlayer({ uri: path }); soundRef.current = player; player.play();
   }
 
   async function send() {
