@@ -21,8 +21,8 @@ import { speak, availableEngines, defaultEngine } from "./speech.mjs";
 
 const run = promisify(execFile);
 
-function handOffWindowsLaunch(target) {
-  const child = spawn("cmd", ["/c", "start", "", target], {
+function handOffWindowsLaunch(target, args = []) {
+  const child = spawn("cmd", ["/c", "start", "", target, ...args], {
     detached: true,
     stdio: "ignore",
     windowsHide: true,
@@ -49,12 +49,58 @@ const APP_ALIASES = {
   spotify: "spotify:",
   steam: "steam.exe",
   teams: "msteams:",
+  "microsoft teams": "msteams:",
   terminal: "wt.exe",
   "task manager": "taskmgr.exe",
   "visual studio code": "code.exe",
   vscode: "code.exe",
   word: "winword.exe",
 };
+
+function windowsPath(variable, ...parts) {
+  const root = process.env[variable];
+  return root ? join(root, ...parts) : "";
+}
+
+/**
+ * Resolve apps whose Windows installers do not put the executable on PATH.
+ * The returned paths are fixed locations derived from Windows environment
+ * folders; they never come from the assistant's text.
+ */
+async function resolveWindowsApp(alias, fallback) {
+  if (alias === "discord.exe") {
+    const update = windowsPath("LOCALAPPDATA", "Discord", "Update.exe");
+    if (update && await fileExists(update)) return { target: update, args: ["--processStart", "Discord.exe"] };
+    const direct = [
+      windowsPath("LOCALAPPDATA", "Discord", "Discord.exe"),
+      windowsPath("PROGRAMFILES", "Discord", "Discord.exe"),
+      windowsPath("PROGRAMFILES(X86)", "Discord", "Discord.exe"),
+    ];
+    for (const path of direct) if (path && await fileExists(path)) return { target: path, args: [] };
+  }
+
+  if (alias === "msteams:") {
+    const update = windowsPath("LOCALAPPDATA", "Microsoft", "Teams", "Update.exe");
+    if (update && await fileExists(update)) return { target: update, args: ["--processStart", "Teams.exe"] };
+    const direct = [
+      windowsPath("LOCALAPPDATA", "Microsoft", "Teams", "current", "Teams.exe"),
+      windowsPath("PROGRAMFILES", "Microsoft Teams", "current", "Teams.exe"),
+      windowsPath("PROGRAMFILES(X86)", "Microsoft Teams", "current", "Teams.exe"),
+    ];
+    for (const path of direct) if (path && await fileExists(path)) return { target: path, args: [] };
+  }
+
+  return { target: fallback, args: [] };
+}
+
+async function fileExists(path) {
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function appAlias(value) {
   return String(value ?? "")
@@ -390,6 +436,8 @@ const handlers = {
       ? "app:explorer"
       : alias === "code.exe"
         ? "app:vscode"
+        : alias === "msteams:"
+          ? "app:teams"
         : `app:${appAlias(target)}`;
     if (alias && !launchIsAllowed(config, aliasKey)) {
       throw new Refused(`Launching ${target} is disabled in Bridge Settings.`);
@@ -403,7 +451,9 @@ const handlers = {
     if (platform() === "win32") {
       // `start` is a cmd builtin; the empty string is the window title, which
       // it otherwise steals from a quoted first argument.
-      handOffWindowsLaunch(opened);
+      const launch = alias ? await resolveWindowsApp(alias, opened) : { target: opened, args: [] };
+      handOffWindowsLaunch(launch.target, launch.args);
+      return { opened: launch.target, requested: target, summary: `Opened ${target}.` };
     } else if (platform() === "darwin") {
       await run("open", [opened]);
     } else {
