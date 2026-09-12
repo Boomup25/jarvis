@@ -459,15 +459,19 @@ const machineTools: Record<string, ToolDef & { needs: string }> = {
         name: "computer_list_files",
         description:
           "List what's in a folder on the user's connected computer. " +
-          "Call this first if you're unsure what a shared folder contains.",
+          "Call this first if you're unsure what a shared folder contains. " +
+          "The path is optional: omit it to list the first folder shared by the bridge.",
         parameters: {
           type: "object",
           properties: { path: { type: "string" } },
-          required: ["path"],
+          required: [],
         },
       },
     },
-    handler: async (args, ctx) => machineCall(ctx, "files.list", { path: String(args.path ?? "") }),
+    handler: async (args, ctx) =>
+      machineCall(ctx, "files.list", {
+        path: String(args.path ?? ctx.bridge?.roots[0] ?? ""),
+      }),
   },
 
   computer_search_files: {

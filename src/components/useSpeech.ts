@@ -577,6 +577,28 @@ function clean(text: string): string {
     .trim();
 }
 
+/** Remove narrated delivery cues immediately before text reaches a voice. */
+function cleanSpeech(text: string): string {
+  // Models sometimes narrate delivery instead of just writing the line.
+  // Strip those cues before markdown cleanup so *pauses briefly* is handled
+  // as a cue rather than losing its delimiters first.
+  const withoutDirections = text
+    .replace(
+      /\((?:[^)]*\b(?:pause|pauses|pausing|silence|silent|clears? throat|sighs?|chuckles?|laughs?|smiles?|breathes?)\b[^)]*)\)/gi,
+      " "
+    )
+    .replace(
+      /\[(?:[^\]]*\b(?:pause|pauses|pausing|silence|silent|clears? throat|sighs?|chuckles?|laughs?|smiles?|breathes?)\b[^\]]*)\]/gi,
+      " "
+    )
+    .replace(
+      /\*(?:[^*]*\b(?:pause|pauses|pausing|silence|silent|clears? throat|sighs?|chuckles?|laughs?|smiles?|breathes?)\b[^*]*)\*/gi,
+      " "
+    )
+    .replace(/^\s*(?:pause|pauses|pausing|silence|silent|clears? throat|sighs?|chuckles?|laughs?|smiles?|breathes?)(?:\s+briefly)?\s*[,.:;-]?\s*/i, "");
+  return clean(withoutDirections);
+}
+
 /**
  * Pull one speakable chunk off the front of the buffer, or null if the buffer
  * doesn't yet hold a natural stopping point.
@@ -862,9 +884,13 @@ export function useSpeechOutput() {
 
   const speakDevice = useCallback((text: string) => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    const utterance = new SpeechSynthesisUtterance(text);
+    const spoken = cleanSpeech(text);
+    if (!spoken) return;
+    const utterance = new SpeechSynthesisUtterance(spoken);
     if (voiceRef.current) utterance.voice = voiceRef.current;
-    utterance.rate = 0.94;
+    // Keep the fallback close to the local LuxTTS pace. Some browsers ignore
+    // a voice preference but still honour the rate.
+    utterance.rate = 0.88;
     utterance.pitch = 0.92;
     const settle = () => {
       setSpeaking(false);
@@ -893,13 +919,15 @@ export function useSpeechOutput() {
 
   /** Fire synthesis immediately; the queue awaits the result when its turn comes. */
   const synthesise = useCallback((text: string, gen: number): Promise<string | null> => {
+    const spoken = cleanSpeech(text);
+    if (!spoken) return Promise.resolve(null);
     const controller = new AbortController();
     controllersRef.current.push(controller);
 
     return fetch("/api/speak", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text: spoken }),
       signal: controller.signal,
     })
       .then(async (res) => {
@@ -1035,7 +1063,7 @@ export function useSpeechOutput() {
   const speak = useCallback(
     (raw: string) => {
       if (!enabledRef.current) return;
-      const text = clean(raw).slice(0, SPEAK_BUDGET);
+      const text = cleanSpeech(raw).slice(0, SPEAK_BUDGET);
       if (!text) return;
       shutUp();
       setError(null);

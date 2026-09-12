@@ -133,7 +133,36 @@ export async function POST(req: Request) {
           });
         }
 
-        const { content: systemPrompt } = await buildSystemPrompt(userId, userText);
+        /*
+         * Resolve the bridge before building the model context. The tool
+         * schemas are conditional too, but smaller/free models are much more
+         * reliable when the system message plainly says that computer access
+         * is available and how to use it. Do not include machine names or
+         * local folder paths here; those stay inside the tool result.
+         */
+        const unlockedFor = await readUnlockToken(
+          (await cookies()).get(BRIDGE_COOKIE)?.value
+        );
+        const bridge =
+          unlockedFor === userId && isOwnerUser(user)
+            ? await bridgeContextFor(userId)
+            : null;
+
+        const { content: baseSystemPrompt } = await buildSystemPrompt(userId, userText);
+        const computerPrompt = bridge
+          ? `
+
+## CONNECTED COMPUTER
+A bridge-connected computer is available for this turn. When the user asks you to inspect, list,
+search, read, create, or update a file on that computer, use the matching computer_* tool. Do not
+claim you lack computer access while these tools are available. Use an absolute path inside a shared
+folder. If the user has not given a path, list or search the shared folders first. The bridge can
+read text files and write text files, and it refuses protected folders and binary files.`
+          : `
+
+## COMPUTER ACCESS
+No bridge-connected computer is available for this turn. Do not claim to have read or changed local files.`;
+        const systemPrompt = `${baseSystemPrompt}${computerPrompt}`;
 
         // A model picked in the UI leads; the free chain stays behind it so a
         // rate-limited or retired choice still produces an answer.
@@ -189,14 +218,6 @@ export async function POST(req: Request) {
          * answer is no, the computer_* schemas are never handed to the model,
          * which is why JARVIS says it can't rather than promising and failing.
          */
-        const unlockedFor = await readUnlockToken(
-          (await cookies()).get(BRIDGE_COOKIE)?.value
-        );
-        const bridge =
-          unlockedFor === userId && isOwnerUser(user)
-            ? await bridgeContextFor(userId)
-            : null;
-
         for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
           const result = await streamChat({
             messages,

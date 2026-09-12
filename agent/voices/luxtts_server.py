@@ -39,7 +39,14 @@ MAX_TEXT = 1500
 _engine = None
 _prompt = None
 _lock = threading.Lock()
-_speed = 0.82
+# LuxTTS treats 1.0 as normal pace.  A deliberately measured JARVIS delivery
+# is more intelligible at this setting, especially for longer replies.
+_speed = 0.68
+_t_shift = 0.9
+_smooth = True
+_output_rate = 24000
+_ref_rms = 0.01
+_ref_duration = 5
 LUXTTS_ROOT = Path(__file__).resolve().parent / "LuxTTS"
 
 # The resident server lives beside the checkout rather than inside it. Add the
@@ -66,14 +73,22 @@ def load(model_name: str, ref_audio: str, device: str):
     _engine = LuxTTS(model_name, device=device)
 
     print(f"Encoding reference voice from {ref_audio} ...", flush=True)
-    _prompt = _engine.encode_prompt(ref_audio)
+    # A stronger reference level gives the clone a fuller, less whispered
+    # timbre. Five clean seconds is the model's recommended prompt length.
+    _prompt = _engine.encode_prompt(ref_audio, duration=_ref_duration, rms=_ref_rms)
     print("Ready.", flush=True)
 
 
 def synthesise(text: str) -> bytes:
     """Text in, WAV bytes out."""
     with _lock:
-        audio = _engine.generate_speech(text, _prompt, speed=_speed)
+        audio = _engine.generate_speech(
+            text,
+            _prompt,
+            speed=_speed,
+            t_shift=_t_shift,
+            return_smooth=_smooth,
+        )
 
     # The model hands back float samples; the bridge wants a real WAV file.
     import numpy as np
@@ -88,7 +103,8 @@ def synthesise(text: str) -> bytes:
     with wave.open(buf, "wb") as w:
         w.setnchannels(1)
         w.setsampwidth(2)
-        w.setframerate(48000)  # LuxTTS generates at 48kHz
+        # The smoother vocoder path is 24 kHz; the normal merged path is 48 kHz.
+        w.setframerate(_output_rate)
         w.writeframes(pcm.tobytes())
     return buf.getvalue()
 
@@ -100,7 +116,17 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         # A health check, so `say` can tell "not running" from "broken".
         if self.path == "/health":
-            self._json(200, {"ok": True, "ready": _engine is not None})
+            self._json(
+                200,
+                {
+                    "ok": True,
+                    "ready": _engine is not None,
+                    "speed": _speed,
+                    "t_shift": _t_shift,
+                    "smooth": _smooth,
+                    "sample_rate": _output_rate,
+                },
+            )
         else:
             self._json(404, {"error": "not found"})
 
@@ -150,8 +176,20 @@ def main():
     ap.add_argument(
         "--speed",
         type=float,
-        default=0.82,
+        default=0.68,
         help="Speech speed passed to LuxTTS. 1.0 is normal; lower is slower and more deliberate.",
+    )
+    ap.add_argument(
+        "--t-shift",
+        type=float,
+        default=0.9,
+        help="Quality/sampling setting. Higher usually sounds fuller; 0.9 is the recommended starting point.",
+    )
+    ap.add_argument(
+        "--smooth",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Use LuxTTS's smoother 24 kHz vocoder path to reduce metallic artifacts.",
     )
     ap.add_argument(
         "--device",
@@ -159,8 +197,16 @@ def main():
         help="cuda, mps, cpu, or auto to pick the best available.",
     )
     args = ap.parse_args()
-    global _speed
+    global _speed, _t_shift, _smooth, _output_rate
     _speed = max(0.55, min(1.15, args.speed))
+    _t_shift = max(0.3, min(1.2, args.t_shift))
+    _smooth = bool(args.smooth)
+    _output_rate = 24000 if _smooth else 48000
+    print(
+        f"Speech settings: speed={_speed:.2f}, t_shift={_t_shift:.2f}, "
+        f"smooth={_smooth}, sample_rate={_output_rate}",
+        flush=True,
+    )
 
     device = args.device
     if device == "auto":
