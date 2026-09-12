@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld("jarvisDesktop", {
   pair: (values) => ipcRenderer.invoke("pair", values),
   connect: (passphrase) => ipcRenderer.invoke("connect", passphrase),
   remember: (values) => ipcRenderer.invoke("remember", values),
+  getLaunchCatalog: () => ipcRenderer.invoke("launch-catalog"),
+  setLaunchAccess: (values) => ipcRenderer.invoke("launch-access", values),
   command: (line) => ipcRenderer.invoke("command", line),
   stop: () => ipcRenderer.invoke("stop"),
   setStartup: (enabled) => ipcRenderer.invoke("startup", enabled),

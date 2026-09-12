@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, Menu, nativeImage, safeStorage, screen, shell } from "electron";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readdir, readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -20,6 +21,26 @@ let bridgeState = "stopped";
 let preferences = {};
 let transcriberPromise = null;
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
+
+const BUILTIN_LAUNCH_APPS = [
+  ["app:calculator", "Calculator", "calculator", "Windows"],
+  ["app:chrome", "Google Chrome", "chrome", "Browsers"],
+  ["app:discord", "Discord", "discord", "Communication"],
+  ["app:edge", "Microsoft Edge", "edge", "Browsers"],
+  ["app:explorer", "File Explorer", "file explorer", "Windows"],
+  ["app:notepad", "Notepad", "notepad", "Windows"],
+  ["app:outlook", "Outlook", "outlook", "Communication"],
+  ["app:paint", "Paint", "paint", "Windows"],
+  ["app:powershell", "PowerShell", "powershell", "Windows"],
+  ["app:settings", "Windows Settings", "settings", "Windows"],
+  ["app:spotify", "Spotify", "spotify", "Media"],
+  ["app:steam", "Steam", "steam", "Games"],
+  ["app:teams", "Microsoft Teams", "teams", "Communication"],
+  ["app:terminal", "Windows Terminal", "terminal", "Windows"],
+  ["app:task manager", "Task Manager", "task manager", "Windows"],
+  ["app:vscode", "Visual Studio Code", "vscode", "Development"],
+  ["app:word", "Microsoft Word", "word", "Office"],
+].map(([id, name, target, group]) => ({ id, name, target, group, kind: "app", defaultEnabled: true }));
 
 if (!hasSingleInstanceLock) {
   app.quit();
@@ -46,6 +67,64 @@ function savePreferences() {
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, JSON.stringify(preferences, null, 2), { mode: 0o600 });
 }
+
+function launchAccess() {
+  return preferences.launchApps && typeof preferences.launchApps === "object" ? preferences.launchApps : {};
+}
+
+async function launchCatalog() {
+  const items = [...BUILTIN_LAUNCH_APPS];
+  let config;
+  try {
+    const { loadConfig } = await import(configModuleUrl);
+    config = loadConfig();
+  } catch {
+    config = null;
+  }
+
+  const seenGames = new Set();
+  for (const root of config?.roots ?? []) {
+    const common = resolve(root);
+    if (!/(?:^|\\)steamapps\\common$/i.test(common.replaceAll("/", "\\"))) continue;
+    let entries;
+    try { entries = await readdir(dirname(common), { withFileTypes: true }); } catch { continue; }
+    for (const entry of entries) {
+      if (!entry.isFile() || !/^appmanifest_\d+\.acf$/i.test(entry.name)) continue;
+      const text = await readFile(join(dirname(common), entry.name), "utf8").catch(() => "");
+      const appId = text.match(/"appid"\s+"(\d+)"/i)?.[1] ?? "";
+      const name = text.match(/"name"\s+"([^"]+)"/i)?.[1] ?? "";
+      const installdir = text.match(/"installdir"\s+"([^"]+)"/i)?.[1] ?? "";
+      const gamePath = installdir ? join(common, installdir) : "";
+      if (!appId || !name || !gamePath || !existsSync(gamePath) || seenGames.has(appId)) continue;
+      seenGames.add(appId);
+      items.push({ id: `steam:${appId}`, name, target: `steam-game:${name}`, group: "Steam games", kind: "game", defaultEnabled: true });
+    }
+  }
+
+  const access = launchAccess();
+  return items.map((item) => ({
+    ...item,
+    enabled: Object.prototype.hasOwnProperty.call(access, item.id) ? Boolean(access[item.id]) : item.defaultEnabled,
+  }));
+}
+
+async function setLaunchAccess(id, enabled) {
+  const catalog = await launchCatalog();
+  if (!catalog.some((item) => item.id === id)) return { ok: false, error: "That app is not in the launch list." };
+  preferences.launchApps = { ...launchAccess(), [id]: Boolean(enabled) };
+  savePreferences();
+
+  const wasRunning = Boolean(bridgeProcess);
+  if (wasRunning) {
+    const passphrase = await unlockPassphrase();
+    if (passphrase) {
+      bridgeProcess.kill();
+      await new Promise((done) => setTimeout(done, 250));
+      startBridge(passphrase);
+    }
+  }
+  return { ok: true, restarting: wasRunning };
+}
 function setState(state, detail = "") { bridgeState = state; send("bridge-state", { state, detail }); }
 function nodeCommand() { return process.execPath; }
 function spawnNode(args, extraEnv = {}) {
@@ -59,7 +138,10 @@ function spawnNode(args, extraEnv = {}) {
 function startBridge(passphrase) {
   if (bridgeProcess) return { ok: false, error: "Bridge is already running." };
   if (!existsSync(bridgePath)) return { ok: false, error: `Bridge files were not found at ${bridgePath}` };
-  bridgeProcess = spawnNode([bridgePath, "start"], { JARVIS_BRIDGE_PASSPHRASE: passphrase });
+  bridgeProcess = spawnNode([bridgePath, "start"], {
+    JARVIS_BRIDGE_PASSPHRASE: passphrase,
+    JARVIS_LAUNCH_APPS: JSON.stringify(launchAccess()),
+  });
   setState("starting");
   const read = (chunk) => {
     const text = chunk.toString();
@@ -413,6 +495,10 @@ app.whenReady().then(async () => {
     return result;
   });
   ipcMain.handle("remember", (_event, values) => rememberPassphrase(String(values.passphrase ?? ""), Boolean(values.remember)));
+  ipcMain.handle("launch-catalog", () => launchCatalog());
+  ipcMain.handle("launch-access", (_event, values) =>
+    setLaunchAccess(String(values?.id ?? ""), Boolean(values?.enabled))
+  );
   ipcMain.handle("command", (_event, line) => runCommand(line));
   ipcMain.handle("stop", () => stopBridge());
   ipcMain.handle("startup", (_event, enabled) => {

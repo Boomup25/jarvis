@@ -194,10 +194,22 @@ async function pair() {
 /* ---- running --------------------------------------------------------- */
 
 async function start() {
-  const config = loadConfig();
+  let config = loadConfig();
   if (!config?.sealed) {
     console.error(`No pairing found at ${CONFIG_PATH}. Run:  npm run pair`);
     exit(1);
+  }
+
+  // The desktop app keeps launch permissions locally and passes them only to
+  // this child process. The standalone bridge remains backwards compatible.
+  try {
+    const launchApps = env.JARVIS_LAUNCH_APPS ? JSON.parse(env.JARVIS_LAUNCH_APPS) : null;
+    if (launchApps && typeof launchApps === "object" && !Array.isArray(launchApps)) {
+      config = { ...config, launchApps };
+    }
+  } catch {
+    // Ignore a malformed optional permission map; the normal bridge config is
+    // still usable and app.open will use its default allowlist.
   }
 
   // Allow an unattended start for a service wrapper, but never default to it.

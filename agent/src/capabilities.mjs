@@ -58,6 +58,12 @@ function normalizedName(value) {
   return String(value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
+function launchIsAllowed(config, key) {
+  const access = config.launchApps;
+  if (!access || typeof access !== "object" || !Object.keys(access).length) return true;
+  return access[key] !== false;
+}
+
 /** Find a game executable under a shared Steam common folder. */
 async function findSteamGame(gameName, config) {
   if (platform() !== "win32") throw new Refused("Steam game launching is currently supported on Windows only.");
@@ -348,6 +354,9 @@ const handlers = {
       const game = target.replace(/^steam-game:/i, "").trim();
       const located = await findSteamGame(game, config);
       if (located.appId) {
+        if (!launchIsAllowed(config, `steam:${located.appId}`)) {
+          throw new Refused(`Launching ${located.title} is disabled in Bridge Settings.`);
+        }
         const steamUri = `steam://rungameid/${located.appId}`;
         await run("cmd", ["/c", "start", "", steamUri], { windowsHide: true });
         return {
@@ -358,12 +367,23 @@ const handlers = {
           summary: `Sent ${located.title} to Steam to launch.`,
         };
       }
+      if (!launchIsAllowed(config, `game:${normalizedName(game)}`)) {
+        throw new Refused(`Launching ${located.title} is disabled in Bridge Settings.`);
+      }
       await run("cmd", ["/c", "start", "", located.executable], { windowsHide: true });
       return { opened: located.executable, game: located.title, summary: `Launched ${located.title}` };
     }
 
     const isUrl = /^https?:\/\//i.test(target);
     const alias = APP_ALIASES[appAlias(target)];
+    const aliasKey = alias === "explorer.exe"
+      ? "app:explorer"
+      : alias === "code.exe"
+        ? "app:vscode"
+        : `app:${appAlias(target)}`;
+    if (alias && !launchIsAllowed(config, aliasKey)) {
+      throw new Refused(`Launching ${target} is disabled in Bridge Settings.`);
+    }
     const opened = isUrl
       ? target
       : alias && !isAbsolute(target)
