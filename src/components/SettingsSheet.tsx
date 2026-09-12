@@ -250,6 +250,8 @@ export function SettingsSheet({
             <NotificationSettings />
           </div>
 
+          <PasswordSection />
+
           {/* Owner-only and behind its own passphrase; the component renders
               nothing at all for an account that can't reach the bridge. */}
           <BridgePanel />
@@ -498,6 +500,57 @@ export function SettingsSheet({
       </div>
     </div>
     </div>
+  );
+}
+
+function PasswordSection() {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ kind: "error" | "success"; text: string } | null>(null);
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setMessage(null);
+    if (newPassword !== confirmPassword) {
+      setMessage({ kind: "error", text: "The new passwords do not match." });
+      return;
+    }
+    setBusy(true);
+    try {
+      const response = await fetch("/api/auth/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Could not change your password.");
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setMessage({ kind: "success", text: "Password changed. Sign in again on your other devices." });
+    } catch (error) {
+      setMessage({ kind: "error", text: error instanceof Error ? error.message : "Could not change your password." });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="mb-3 rounded-lg border border-edge p-3">
+      <div className="text-[0.7rem] uppercase tracking-[0.18em] text-mist">Account password</div>
+      <p className="mt-1 text-[0.65rem] leading-snug text-mist">Change the password used by the web and mobile apps.</p>
+      <form onSubmit={submit} className="mt-2 space-y-2">
+        <input type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} placeholder="Current password" className="w-full rounded-lg border border-edge bg-abyss/70 px-2.5 py-2 text-[0.8rem] placeholder:text-mist/60 focus:border-arc/50 focus:outline-none" />
+        <input type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder="New password (8+ characters)" className="w-full rounded-lg border border-edge bg-abyss/70 px-2.5 py-2 text-[0.8rem] placeholder:text-mist/60 focus:border-arc/50 focus:outline-none" />
+        <input type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Confirm new password" className="w-full rounded-lg border border-edge bg-abyss/70 px-2.5 py-2 text-[0.8rem] placeholder:text-mist/60 focus:border-arc/50 focus:outline-none" />
+        {message && <p className={`text-[0.7rem] ${message.kind === "error" ? "text-ember" : "text-jade"}`}>{message.text}</p>}
+        <button type="submit" disabled={busy || !currentPassword || !newPassword || !confirmPassword} className="w-full rounded-lg border border-edge py-2 text-[0.75rem] text-mist transition-colors hover:border-arc/40 hover:text-frost disabled:opacity-50">
+          {busy ? "Changing…" : "Change password"}
+        </button>
+      </form>
+    </section>
   );
 }
 

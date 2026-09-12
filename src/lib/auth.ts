@@ -62,6 +62,14 @@ export async function createSessionToken(userId: string): Promise<string> {
 
 /** Returns the user id the token belongs to, or null if it isn't valid. */
 export async function readSessionToken(token: string | undefined | null): Promise<string | null> {
+  const claims = await readSessionClaims(token);
+  return claims?.userId ?? null;
+}
+
+/** Returns the signed session claims, including when the token was issued. */
+export async function readSessionClaims(
+  token: string | undefined | null
+): Promise<{ userId: string; issuedAt: number } | null> {
   if (!token) return null;
   const [payload, sig] = token.split(".");
   if (!payload || !sig) return null;
@@ -78,7 +86,7 @@ export async function readSessionToken(token: string | undefined | null): Promis
     const data = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
     if (typeof data.iat !== "number" || typeof data.sub !== "string") return null;
     if (Date.now() - data.iat > MAX_AGE_SECONDS * 1000) return null;
-    return data.sub;
+    return { userId: data.sub, issuedAt: data.iat };
   } catch {
     return null;
   }

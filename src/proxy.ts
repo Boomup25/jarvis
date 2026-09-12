@@ -6,6 +6,7 @@ import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth";
 const PUBLIC = [
   "/login",
   "/api/auth/login",
+  "/api/auth/mobile",
   "/api/health",
   "/manifest.webmanifest",
   "/icon.svg",
@@ -28,7 +29,9 @@ export async function proxy(req: NextRequest) {
     return NextResponse.next();
   }
 
-  const ok = await verifySessionToken(req.cookies.get(SESSION_COOKIE)?.value);
+  const cookieToken = req.cookies.get(SESSION_COOKIE)?.value;
+  const bearerToken = /^Bearer\s+(.+)$/i.exec(req.headers.get("authorization") ?? "")?.[1];
+  const ok = await verifySessionToken(cookieToken || bearerToken);
   if (ok) return NextResponse.next();
 
   if (pathname.startsWith("/api/")) {

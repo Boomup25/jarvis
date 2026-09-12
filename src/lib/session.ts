@@ -1,7 +1,7 @@
 import { cache } from "react";
 import { cookies, headers } from "next/headers";
 import type { User } from "@prisma/client";
-import { SESSION_COOKIE, readSessionToken } from "./auth";
+import { SESSION_COOKIE, readSessionClaims } from "./auth";
 import { prisma } from "./db";
 
 /**
@@ -20,10 +20,11 @@ export const currentUser = cache(async (): Promise<User | null> => {
   // Native clients keep the same signed session token in the platform
   // keychain and send it as Bearer auth. Browser sessions continue to use the
   // httpOnly cookie, so this does not widen the browser attack surface.
-  const userId = await readSessionToken(cookieToken || bearerToken);
-  if (!userId) return null;
+  const claims = await readSessionClaims(cookieToken || bearerToken);
+  if (!claims) return null;
 
-  const user = await prisma.user.findUnique({ where: { id: userId } });
+  const user = await prisma.user.findUnique({ where: { id: claims.userId } });
+  if (user?.passwordChangedAt && claims.issuedAt < user.passwordChangedAt.getTime()) return null;
   return user && user.active ? user : null;
 });
 
