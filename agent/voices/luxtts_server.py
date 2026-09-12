@@ -25,6 +25,7 @@ Binds to loopback only. Nothing outside this machine can reach it.
 import argparse
 import io
 import json
+from pathlib import Path
 import sys
 import threading
 import wave
@@ -39,6 +40,13 @@ _engine = None
 _prompt = None
 _lock = threading.Lock()
 _speed = 0.82
+LUXTTS_ROOT = Path(__file__).resolve().parent / "LuxTTS"
+
+# The resident server lives beside the checkout rather than inside it. Add the
+# checkout to Python's import path so `python ..\luxtts_server.py` works from
+# the LuxTTS directory on Windows.
+if str(LUXTTS_ROOT) not in sys.path:
+    sys.path.insert(0, str(LUXTTS_ROOT))
 
 
 def load(model_name: str, ref_audio: str, device: str):
