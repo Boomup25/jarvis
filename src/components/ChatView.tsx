@@ -77,6 +77,7 @@ const TOOL_LABELS = {
   computer_list_files: "Looking in that folder",
   computer_search_files: "Searching your computer",
   computer_open: "Opening it",
+  computer_launch_game: "Launching the game",
   computer_info: "Checking your machine",
 } as const;
 
@@ -95,6 +96,11 @@ const IDLE_END_MS = 30_000;
  * the tail of JARVIS's own sentence lands in the next transcript.
  */
 const RESUME_GAP_MS = 400;
+
+/** Action requests close the active voice turn after JARVIS completes them. */
+function looksLikeOneShotTask(text: string): boolean {
+  return /^(?:(?:please|can you|could you|would you)\s+)*(?:open|launch|start|close|quit|list|read|write|search|find|show|check|look up|turn on|turn off|add|remove|run)\b/i.test(text.trim());
+}
 
 const clock = (ms?: number) =>
   ms
@@ -161,6 +167,9 @@ export function ChatView({
    */
   const closingRef = useRef(false);
   const [closing, setClosing] = useState(false);
+  const oneShotCandidateRef = useRef(false);
+  const machineActionRef = useRef(false);
+  const returnToWakeRef = useRef(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -263,6 +272,10 @@ export function ChatView({
         closingRef.current = true;
         setClosing(true);
       }
+
+      oneShotCandidateRef.current = sessionRef.current === "active" && looksLikeOneShotTask(trimmed);
+      machineActionRef.current = false;
+      returnToWakeRef.current = false;
 
       // Inside the tap/Enter — the only moment iOS will prime speech synthesis.
       voice.unlock();
@@ -374,6 +387,7 @@ export function ChatView({
                 patch((m) => ({ ...m, memories: [...(m.memories ?? []), event.content] }));
                 break;
               case "machine_action":
+                machineActionRef.current = true;
                 patch((m) => ({
                   ...m,
                   machine: [
@@ -391,6 +405,7 @@ export function ChatView({
               case "done":
                 setConversationId(event.conversationId);
                 setStatus(null);
+                returnToWakeRef.current = oneShotCandidateRef.current && machineActionRef.current;
                 voice.endFeed();
                 break;
               case "error":
@@ -506,6 +521,12 @@ export function ChatView({
     // You said goodbye and the reply has now finished playing. Close instead
     // of reopening — this is the whole point of noticing the sign-off.
     if (closingRef.current) {
+      finishRef.current();
+      return;
+    }
+
+    if (returnToWakeRef.current) {
+      returnToWakeRef.current = false;
       finishRef.current();
       return;
     }
