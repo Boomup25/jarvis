@@ -454,7 +454,9 @@ async function pairMachine(values) {
   const roots = String(values.roots ?? "").split(/\r?\n/).map((root) => root.trim()).filter(Boolean);
   const existing = loadConfig() ?? DEFAULT_CONFIG;
   saveConfig({ ...existing, serverUrl, name: String(values.name ?? "").trim() || "My computer", roots, sealed: sealToken(token, passphrase) });
-  await rememberPassphrase(passphrase, Boolean(values.remember));
+  // Pairing opts this Windows account into automatic startup. The credential
+  // is protected by Electron's Windows-backed safeStorage (DPAPI).
+  await rememberPassphrase(passphrase, true);
   return startBridge(passphrase);
 }
 function createWindow() {
@@ -491,7 +493,9 @@ app.whenReady().then(async () => {
   ipcMain.handle("state", configState);
   ipcMain.handle("pair", (_event, values) => pairMachine(values));
   ipcMain.handle("connect", async (_event, passphrase) => {
-    const result = startBridge(String(passphrase ?? ""));
+    const cleanPassphrase = String(passphrase ?? "");
+    const result = startBridge(cleanPassphrase);
+    if (result.ok) await rememberPassphrase(cleanPassphrase, true);
     return result;
   });
   ipcMain.handle("remember", (_event, values) => rememberPassphrase(String(values.passphrase ?? ""), Boolean(values.remember)));
@@ -521,9 +525,10 @@ app.whenReady().then(async () => {
   ipcMain.handle("transcribe-audio", (_event, payload) => transcribeAudio(payload));
   ipcMain.handle("open-url", (_event, url) => shell.openExternal(String(url)));
   const config = await configState();
-  send("desktop-state", { ...config, startOnLogin: Boolean(preferences.startOnLogin) });
   const passphrase = await unlockPassphrase();
   if (config.paired && passphrase) startBridge(passphrase);
+  const initial = await configState();
+  send("desktop-state", { ...initial, startOnLogin: Boolean(preferences.startOnLogin) });
 });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
 app.on("before-quit", () => {

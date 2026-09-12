@@ -41,10 +41,13 @@ function setStatus(next) {
 function showSetup() {
   setup.classList.remove("hidden");
   const paired = state.paired;
+  const autoUnlock = paired && state.autoUnlock && state.state !== "stopped";
   pairForm.classList.toggle("hidden", paired);
-  unlockForm.classList.toggle("hidden", !paired);
-  setupTitle.textContent = paired ? "Unlock this computer" : "Connect this computer";
-  setupCopy.textContent = paired ? "Enter the bridge passphrase to start the saved connection." : "Use the device token from Settings → Bridge in JARVIS.";
+  unlockForm.classList.toggle("hidden", !paired || autoUnlock);
+  setupTitle.textContent = paired ? (autoUnlock ? "Starting automatically" : "Unlock this computer") : "Connect this computer";
+  setupCopy.textContent = paired
+    ? (autoUnlock ? "The bridge is starting with the encrypted credential saved on this Windows account." : "Enter the bridge passphrase to recover the saved connection.")
+    : "Use the device token from Settings → Bridge in JARVIS.";
 }
 function hideSetup() { setup.classList.add("hidden"); setupError.textContent = ""; }
 
@@ -125,13 +128,12 @@ async function loadLaunchApps() {
 }
 
 api.onLog(write);
-api.onState((next) => { setStatus(next); if (next.state === "connected") hideSetup(); });
+api.onState((next) => { setStatus(next); if (next.state === "connected") hideSetup(); else if (next.state === "stopped" && state.paired) showSetup(); });
 api.onDesktopState((next) => { setStatus(next); startup.checked = Boolean(next.startOnLogin); if (!next.connected) showSetup(); });
 
 pairForm.addEventListener("submit", async (event) => {
   event.preventDefault(); setupError.textContent = "";
   const values = Object.fromEntries(new FormData(pairForm));
-  values.remember = pairForm.elements.remember.checked;
   const result = await api.pair(values);
   if (!result.ok) setupError.textContent = result.error || "Pairing failed."; else hideSetup();
 });
@@ -140,7 +142,7 @@ unlockForm.addEventListener("submit", async (event) => {
   const passphrase = unlockForm.elements.passphrase.value;
   const result = await api.connect(passphrase);
   if (!result.ok) setupError.textContent = result.error || "Could not start the bridge.";
-  else { await api.remember({ passphrase, remember: unlockForm.elements.remember.checked }); unlockForm.reset(); hideSetup(); }
+  else { unlockForm.reset(); hideSetup(); }
 });
 commandForm.addEventListener("submit", async (event) => {
   event.preventDefault();

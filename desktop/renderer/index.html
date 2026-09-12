@@ -25,12 +25,10 @@
           <label>Passphrase<input name="passphrase" type="password" required /></label>
           <label>Confirm passphrase<input name="confirm" type="password" required /></label>
           <label class="wide">Folders to share <span class="muted">(one absolute path per line)</span><textarea name="roots" rows="3" placeholder="C:\Users\Kerry\Desktop\Jarvis Work"></textarea></label>
-          <label class="check wide"><input name="remember" type="checkbox" checked /> Remember the passphrase securely on this Windows account</label>
           <button class="primary wide" type="submit">Pair and connect</button>
         </form>
         <form id="unlock-form" class="form-grid hidden">
           <label class="wide">Bridge passphrase<input name="passphrase" type="password" required autofocus /></label>
-          <label class="check wide"><input name="remember" type="checkbox" checked /> Remember the passphrase securely on this Windows account</label>
           <button class="primary wide" type="submit">Unlock and connect</button>
         </form>
         <p id="setup-error" class="error"></p>
