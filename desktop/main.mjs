@@ -20,6 +20,8 @@ let bridgeProcess = null;
 let bridgeState = "stopped";
 let preferences = {};
 let transcriberPromise = null;
+let voiceServerProcess = null;
+let voiceServerStartPromise = null;
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
 const BUILTIN_LAUNCH_APPS = [
@@ -66,6 +68,105 @@ function savePreferences() {
   const file = preferencePath();
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, JSON.stringify(preferences, null, 2), { mode: 0o600 });
+}
+
+function voiceServerDefaults(config = null) {
+  const voiceRoots = [
+    join(repoRoot, "agent", "voices"),
+    join(homedir(), "source", "repos", "jarvis", "agent", "voices"),
+  ];
+  const voiceRoot = voiceRoots.find((root) => existsSync(root)) ?? voiceRoots[0];
+  const pythonPath = [
+    join(voiceRoot, ".venv", "Scripts", "python.exe"),
+    join(voiceRoot, "..", "voices.venv", "Scripts", "python.exe"),
+  ].find((file) => existsSync(file)) ?? "python";
+  const scriptPath = join(voiceRoot, "luxtts_server.py");
+  const referencePath = [
+    join(homedir(), "Downloads", "boot-cleaned.wav"),
+    join(voiceRoot, "reference.wav"),
+  ].find((file) => existsSync(file)) ?? join(homedir(), "Downloads", "boot-cleaned.wav");
+  return {
+    enabled: config?.speech?.engine === "http",
+    pythonPath,
+    scriptPath,
+    referencePath,
+    speed: "0.68",
+    port: "5111",
+  };
+}
+
+function voiceServerSettings(config = null) {
+  return { ...voiceServerDefaults(config), ...(preferences.voiceServer ?? {}) };
+}
+
+async function voiceServerHealthy(port = "5111") {
+  try {
+    const response = await fetch(`http://127.0.0.1:${Number(port) || 5111}/health`, { signal: AbortSignal.timeout(900) });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function startVoiceServer(config = null) {
+  if (voiceServerStartPromise) return voiceServerStartPromise;
+  voiceServerStartPromise = startVoiceServerOnce(config).finally(() => {
+    voiceServerStartPromise = null;
+  });
+  return voiceServerStartPromise;
+}
+
+async function startVoiceServerOnce(config = null) {
+  const settings = voiceServerSettings(config);
+  if (!settings.enabled || voiceServerProcess) return { ok: true, running: Boolean(voiceServerProcess), skipped: !settings.enabled };
+  if (await voiceServerHealthy(settings.port)) return { ok: true, running: true, alreadyRunning: true };
+  if (!existsSync(settings.scriptPath)) return { ok: false, error: `Voice server script was not found at ${settings.scriptPath}` };
+  if (settings.pythonPath !== "python" && !existsSync(settings.pythonPath)) return { ok: false, error: `Python was not found at ${settings.pythonPath}` };
+  const args = [settings.scriptPath, "--ref", settings.referencePath, "--port", String(Number(settings.port) || 5111), "--speed", String(Number(settings.speed) || 0.68)];
+  voiceServerProcess = spawn(settings.pythonPath, args, {
+    cwd: dirname(settings.scriptPath),
+    windowsHide: true,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const logVoice = (chunk) => send("bridge-log", `[voice] ${chunk.toString()}`);
+  voiceServerProcess.stdout?.on("data", logVoice);
+  voiceServerProcess.stderr?.on("data", logVoice);
+  voiceServerProcess.once("error", (error) => {
+    send("bridge-log", `\nVoice server error: ${error.message}\n`);
+    voiceServerProcess = null;
+  });
+  voiceServerProcess.once("exit", (code, signal) => {
+    voiceServerProcess = null;
+    send("bridge-log", `\nVoice server stopped (${code ?? signal ?? "unknown"}).\n`);
+  });
+  send("bridge-log", `\nStarting LuxTTS voice server on port ${args[3]}…\n`);
+  return { ok: true, running: true, starting: true };
+}
+
+async function getVoiceServerSettings() {
+  const { loadConfig } = await import(configModuleUrl);
+  const settings = voiceServerSettings(loadConfig());
+  return { ...settings, running: Boolean(voiceServerProcess) || await voiceServerHealthy(settings.port) };
+}
+
+async function setVoiceServerEnabled(enabled) {
+  const { loadConfig } = await import(configModuleUrl);
+  const config = loadConfig();
+  preferences.voiceServer = { ...voiceServerSettings(config), enabled: Boolean(enabled) };
+  savePreferences();
+  if (enabled) {
+    const result = await startVoiceServer(config);
+    return { ...result, settings: await getVoiceServerSettings() };
+  }
+  stopVoiceServer();
+  return { ok: true, settings: await getVoiceServerSettings() };
+}
+
+function stopVoiceServer() {
+  if (!voiceServerProcess) return { ok: true };
+  voiceServerProcess.kill();
+  voiceServerProcess = null;
+  return { ok: true };
 }
 
 function launchAccess() {
@@ -184,6 +285,9 @@ function commandHelp() {
   folder list                   Show shared folders
   folder add <absolute-path>    Add a shared folder
   folder remove <absolute-path> Stop sharing a folder
+  voice start                   Start the configured local voice server
+  voice stop                    Stop the local voice server
+  voice status                  Check the local voice server
   say "text"                   Test the configured JARVIS voice
   clear                         Clear this window's log`;
 }
@@ -223,6 +327,31 @@ async function runCommand(line) {
     return { ok: result.ok, output: result.ok ? "JARVIS address saved. The bridge is reconnecting." : result.output };
   }
   if (command === "clear") return { ok: true, clear: true, output: "" };
+  if (command === "voice") {
+    const action = (args[1] ?? "status").toLowerCase();
+    const { loadConfig } = await import(configModuleUrl);
+    const config = loadConfig();
+    if (action === "start") {
+      const result = await startVoiceServer(config);
+      return {
+        ok: result.ok,
+        output: result.ok
+          ? result.skipped
+            ? "Automatic voice server startup is disabled. Enable it in Settings."
+            : result.alreadyRunning
+              ? "Voice server is already running."
+              : "Voice server starting in the background."
+          : result.error,
+      };
+    }
+    if (action === "stop") { stopVoiceServer(); return { ok: true, output: "Voice server stopped." }; }
+    if (action === "status") {
+      const settings = voiceServerSettings(config);
+      const healthy = voiceServerProcess ? true : await voiceServerHealthy(settings.port);
+      return { ok: true, output: healthy ? `Voice server is running on port ${settings.port}.` : "Voice server is not running." };
+    }
+    return { ok: false, output: "Usage: voice start, voice stop, or voice status" };
+  }
   if (command === "restart") {
     const passphrase = await unlockPassphrase();
     if (!passphrase) return { ok: false, output: "No stored passphrase. Use Connect first." };
@@ -263,6 +392,10 @@ async function openJarvisWindow() {
   const config = loadConfig();
   const url = String(config?.serverUrl ?? "").trim();
   if (!url) return { ok: false, error: "Pair this computer first so JARVIS knows which server to open." };
+
+  void startVoiceServer(config).then((result) => {
+    if (!result.ok) send("bridge-log", `\nVoice server was not started: ${result.error}\n`);
+  });
 
   if (jarvisWindow && !jarvisWindow.isDestroyed()) {
     jarvisWindow.show();
@@ -503,6 +636,8 @@ app.whenReady().then(async () => {
   ipcMain.handle("launch-access", (_event, values) =>
     setLaunchAccess(String(values?.id ?? ""), Boolean(values?.enabled))
   );
+  ipcMain.handle("voice-settings", () => getVoiceServerSettings());
+  ipcMain.handle("voice-autostart", (_event, enabled) => setVoiceServerEnabled(Boolean(enabled)));
   ipcMain.handle("command", (_event, line) => runCommand(line));
   ipcMain.handle("stop", () => stopBridge());
   ipcMain.handle("startup", (_event, enabled) => {
@@ -527,6 +662,12 @@ app.whenReady().then(async () => {
   const config = await configState();
   const passphrase = await unlockPassphrase();
   if (config.paired && passphrase) startBridge(passphrase);
+  const loadedConfig = (await import(configModuleUrl)).loadConfig();
+  if (config.paired && voiceServerSettings(loadedConfig).enabled) {
+    void startVoiceServer(loadedConfig).then((result) => {
+      if (!result.ok) send("bridge-log", `\nVoice server was not started: ${result.error}\n`);
+    });
+  }
   const initial = await configState();
   send("desktop-state", { ...initial, startOnLogin: Boolean(preferences.startOnLogin) });
 });
@@ -534,6 +675,7 @@ app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(
 app.on("before-quit", () => {
   app.isQuitting = true;
   if (orbWindow && !orbWindow.isDestroyed()) orbWindow.destroy();
+  stopVoiceServer();
   if (bridgeProcess) {
     bridgeProcess.kill();
     bridgeProcess = null;

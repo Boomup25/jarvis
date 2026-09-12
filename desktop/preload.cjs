@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld("jarvisDesktop", {
   remember: (values) => ipcRenderer.invoke("remember", values),
   getLaunchCatalog: () => ipcRenderer.invoke("launch-catalog"),
   setLaunchAccess: (values) => ipcRenderer.invoke("launch-access", values),
+  getVoiceSettings: () => ipcRenderer.invoke("voice-settings"),
+  setVoiceAutostart: (enabled) => ipcRenderer.invoke("voice-autostart", enabled),
   command: (line) => ipcRenderer.invoke("command", line),
   stop: () => ipcRenderer.invoke("stop"),
   setStartup: (enabled) => ipcRenderer.invoke("startup", enabled),

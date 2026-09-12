@@ -19,6 +19,8 @@ const settingsPage = $("#settings-page");
 const settingsToggle = $("#settings-toggle");
 const settingsClose = $("#settings-close");
 const launchApps = $("#launch-apps");
+const voiceAutostart = $("#voice-autostart");
+const voiceSettingsHelp = $("#voice-settings-help");
 
 if (!api) {
   output.textContent = "The desktop bridge did not load. Please reinstall the latest JARVIS Bridge installer.\n";
@@ -56,7 +58,19 @@ function showSettings(open) {
   connectionView.classList.toggle("hidden", open);
   settingsPage.classList.toggle("hidden", !open);
   settingsToggle.textContent = open ? "Connection" : "Settings";
-  if (open) loadLaunchApps();
+  if (open) { loadLaunchApps(); loadVoiceSettings(); }
+}
+
+async function loadVoiceSettings() {
+  try {
+    const settings = await api.getVoiceSettings();
+    voiceAutostart.checked = Boolean(settings.enabled);
+    voiceSettingsHelp.textContent = settings.running
+      ? `Running on port ${settings.port}. It will start automatically whenever JARVIS opens.`
+      : `Uses ${settings.pythonPath} with ${settings.referencePath}. It starts in the background when JARVIS opens.`;
+  } catch (error) {
+    voiceSettingsHelp.textContent = `Voice server settings unavailable: ${error?.message ?? error}`;
+  }
 }
 
 function renderLaunchApps(items) {
@@ -166,6 +180,18 @@ openJarvisButton.addEventListener("click", async () => {
 });
 settingsToggle.addEventListener("click", () => showSettings(!settingsOpen));
 settingsClose.addEventListener("click", () => showSettings(false));
+voiceAutostart.addEventListener("change", async () => {
+  voiceAutostart.disabled = true;
+  const result = await api.setVoiceAutostart(voiceAutostart.checked);
+  if (!result?.ok) {
+    voiceAutostart.checked = !voiceAutostart.checked;
+    write(result?.error || "Could not update voice server startup.");
+  } else {
+    write(voiceAutostart.checked ? "Voice server will start with JARVIS." : "Automatic voice server startup disabled.");
+    await loadVoiceSettings();
+  }
+  voiceAutostart.disabled = false;
+});
 serverForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const address = serverUrl.value.trim();
