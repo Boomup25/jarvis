@@ -30,7 +30,7 @@ type Page = { slug: string; title: string; summary?: string; type: string; updat
 const TOKEN_KEY = "jarvis.mobile.token";
 const URL_KEY = "jarvis.mobile.url";
 const NAME_KEY = "jarvis.mobile.name";
-const DEFAULT_URL = process.env.EXPO_PUBLIC_JARVIS_URL ?? "";
+const DEFAULT_URL = process.env.EXPO_PUBLIC_JARVIS_URL ?? "https://jarvis-production-83c4.up.railway.app";
 
 function normalizeUrl(value: string) { return value.trim().replace(/\/+$/, ""); }
 async function loadSession(): Promise<Session | null> {

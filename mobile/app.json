@@ -11,8 +11,16 @@
       "bundleIdentifier": "com.jarvis.assistant",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "JARVIS uses the microphone when you choose to speak.",
-        "NSSpeechRecognitionUsageDescription": "JARVIS uses speech recognition when you choose voice input."
+        "NSSpeechRecognitionUsageDescription": "JARVIS uses speech recognition to transcribe your request.",
+        "ITSAppUsesNonExemptEncryption": false
       }
+    },
+    "android": {
+      "package": "com.jarvis.assistant",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
     },
     "plugins": [
       "expo-secure-store",
@@ -33,6 +41,11 @@
           "speechRecognitionPermission": "JARVIS uses speech recognition to transcribe your request."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "ee9d8b06-83c1-4073-a1a2-10562456e6fe"
+      }
+    }
   }
 }
