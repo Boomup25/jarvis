@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/session";
+import { createActivity } from "@/lib/activity";
 
 export const dynamic = "force-dynamic";
 
@@ -36,15 +37,13 @@ export async function POST(req: Request) {
       })
     : null;
 
-  const log = await prisma.logEntry.create({
-    data: {
-      userId: auth.user.id,
-      kind,
-      pageSlug: exists?.slug ?? null,
-      note: String(body.note ?? ""),
-      value: typeof body.value === "object" && body.value ? body.value : {},
-      ...(body.occurredAt ? { occurredAt: new Date(String(body.occurredAt)) } : {}),
-    },
+  const { log, deduplicated } = await createActivity({
+    userId: auth.user.id,
+    kind,
+    pageSlug: exists?.slug ?? null,
+    note: String(body.note ?? "").trim(),
+    value: typeof body.value === "object" && body.value ? body.value : {},
+    occurredAt: body.occurredAt,
   });
-  return Response.json({ log }, { status: 201 });
+  return Response.json({ log, deduplicated }, { status: deduplicated ? 200 : 201 });
 }

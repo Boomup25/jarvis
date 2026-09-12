@@ -38,6 +38,7 @@ MAX_TEXT = 1500
 _engine = None
 _prompt = None
 _lock = threading.Lock()
+_speed = 0.82
 
 
 def load(model_name: str, ref_audio: str, device: str):
@@ -64,7 +65,7 @@ def load(model_name: str, ref_audio: str, device: str):
 def synthesise(text: str) -> bytes:
     """Text in, WAV bytes out."""
     with _lock:
-        audio = _engine.generate_speech(text, _prompt)
+        audio = _engine.generate_speech(text, _prompt, speed=_speed)
 
     # The model hands back float samples; the bridge wants a real WAV file.
     import numpy as np
@@ -139,11 +140,19 @@ def main():
     ap.add_argument("--model", default="YatharthS/LuxTTS", help="HuggingFace model id.")
     ap.add_argument("--port", type=int, default=5111)
     ap.add_argument(
+        "--speed",
+        type=float,
+        default=0.82,
+        help="Speech speed passed to LuxTTS. 1.0 is normal; lower is slower and more deliberate.",
+    )
+    ap.add_argument(
         "--device",
         default="auto",
         help="cuda, mps, cpu, or auto to pick the best available.",
     )
     args = ap.parse_args()
+    global _speed
+    _speed = max(0.55, min(1.15, args.speed))
 
     device = args.device
     if device == "auto":

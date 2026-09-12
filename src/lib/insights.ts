@@ -6,7 +6,8 @@
  * correct and instant even when OpenRouter is rate-limited.
  */
 
-import { prisma } from "./db";
+import { getProfile, prisma } from "./db";
+import { addCalendarDays, calendarDaysBetween, localDateKey, localDateTimeToUtc, startOfLocalWeekKey } from "./localTime";
 
 const DAY = 86_400_000;
 export const HEATMAP_WEEKS = 16;
@@ -55,17 +56,6 @@ export interface Insights {
   recommendations: Recommendation[];
 }
 
-const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-const key = (d: Date) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-
-/** Sunday of the week containing d. */
-function startOfWeek(d: Date): Date {
-  const s = startOfDay(d);
-  s.setDate(s.getDate() - s.getDay());
-  return s;
-}
-
 function levelFor(count: number): number {
   if (count <= 0) return 0;
   if (count === 1) return 1;
@@ -76,8 +66,11 @@ function levelFor(count: number): number {
 
 export async function buildInsights(userId: string): Promise<Insights> {
   const now = new Date();
-  const today = startOfDay(now);
-  const gridStart = startOfWeek(new Date(today.getTime() - (HEATMAP_WEEKS - 1) * 7 * DAY));
+  const profile = await getProfile(userId);
+  const timeZone = profile.timezone || "America/Chicago";
+  const todayKey = localDateKey(now, timeZone);
+  const gridStartKey = addCalendarDays(startOfLocalWeekKey(todayKey, 0), -(HEATMAP_WEEKS - 1) * 7);
+  const gridStart = localDateTimeToUtc(gridStartKey, timeZone, 0);
 
   const [logs, pages, memories, openTasks, allPages] = await Promise.all([
     prisma.logEntry.findMany({
@@ -98,7 +91,7 @@ export async function buildInsights(userId: string): Promise<Insights> {
   // ---- daily buckets -------------------------------------------------
   const byDay = new Map<string, { workouts: number; meals: number; count: number }>();
   for (const log of logs) {
-    const k = key(startOfDay(log.occurredAt));
+    const k = localDateKey(log.occurredAt, timeZone);
     const cell = byDay.get(k) ?? { workouts: 0, meals: 0, count: 0 };
     cell.count++;
     if (log.kind === "workout") cell.workouts++;
@@ -108,8 +101,7 @@ export async function buildInsights(userId: string): Promise<Insights> {
 
   const heatmap: DayCell[] = [];
   for (let i = 0; i < HEATMAP_WEEKS * 7; i++) {
-    const date = new Date(gridStart.getTime() + i * DAY);
-    const k = key(date);
+    const k = addCalendarDays(gridStartKey, i);
     const cell = byDay.get(k) ?? { workouts: 0, meals: 0, count: 0 };
     heatmap.push({
       date: k,
@@ -117,7 +109,7 @@ export async function buildInsights(userId: string): Promise<Insights> {
       workouts: cell.workouts,
       meals: cell.meals,
       level: levelFor(cell.workouts || cell.count),
-      future: date.getTime() > today.getTime(),
+      future: k > todayKey,
     });
   }
 
@@ -125,32 +117,30 @@ export async function buildInsights(userId: string): Promise<Insights> {
   // Today not yet trained doesn't break the streak — yesterday would.
   let streakDays = 0;
   for (let i = 0; i < 365; i++) {
-    const date = new Date(today.getTime() - i * DAY);
-    const cell = byDay.get(key(date));
+    const cell = byDay.get(addCalendarDays(todayKey, -i));
     if (cell?.workouts) streakDays++;
     else if (i > 0) break;
   }
 
   const lastWorkout = logs.find((l) => l.kind === "workout");
   const daysSinceWorkout = lastWorkout
-    ? Math.floor((today.getTime() - startOfDay(lastWorkout.occurredAt).getTime()) / DAY)
+    ? calendarDaysBetween(todayKey, localDateKey(lastWorkout.occurredAt, timeZone))
     : null;
 
   // ---- weekly series --------------------------------------------------
   const weekly = new Map<string, number>();
   for (let w = 0; w < HEATMAP_WEEKS; w++) {
-    const ws = new Date(gridStart.getTime() + w * 7 * DAY);
-    weekly.set(key(ws), 0);
+    weekly.set(addCalendarDays(gridStartKey, w * 7), 0);
   }
   for (const log of logs) {
     if (log.kind !== "workout") continue;
-    const ws = key(startOfWeek(log.occurredAt));
+    const ws = startOfLocalWeekKey(localDateKey(log.occurredAt, timeZone), 0);
     if (weekly.has(ws)) weekly.set(ws, (weekly.get(ws) ?? 0) + 1);
   }
   const weeklySeries = [...weekly.entries()].map(([weekStart, count]) => ({ weekStart, count }));
 
-  const thisWeekKey = key(startOfWeek(now));
-  const lastWeekKey = key(startOfWeek(new Date(now.getTime() - 7 * DAY)));
+  const thisWeekKey = startOfLocalWeekKey(todayKey, 0);
+  const lastWeekKey = addCalendarDays(thisWeekKey, -7);
   const thisWeek = weekly.get(thisWeekKey) ?? 0;
   const lastWeek = weekly.get(lastWeekKey) ?? 0;
 

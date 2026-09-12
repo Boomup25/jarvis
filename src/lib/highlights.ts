@@ -7,19 +7,10 @@
  * a number so a stat can be read as evidence instead of a score.
  */
 
-import { prisma } from "./db";
+import { getProfile, prisma } from "./db";
+import { addCalendarDays, formatCalendarKey, localDateKey, localDateTimeToUtc, startOfLocalWeekKey } from "./localTime";
 
 const DAY = 86_400_000;
-
-const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-
-/** Monday of the week containing d. Weeks read better starting on a workday. */
-function startOfWeek(d: Date): Date {
-  const s = startOfDay(d);
-  const weekday = (s.getDay() + 6) % 7; // Mon = 0
-  s.setDate(s.getDate() - weekday);
-  return s;
-}
 
 export interface Win {
   title: string;
@@ -68,10 +59,13 @@ export interface Highlights {
 
 export async function buildHighlights(userId: string): Promise<Highlights> {
   const now = new Date();
-  const today = startOfDay(now);
-  const weekStart = startOfWeek(now);
-  const weekEnd = new Date(weekStart.getTime() + 7 * DAY);
-  const prevStart = new Date(weekStart.getTime() - 7 * DAY);
+  const profile = await getProfile(userId);
+  const timeZone = profile.timezone || "America/Chicago";
+  const todayKey = localDateKey(now, timeZone);
+  const weekStartKey = startOfLocalWeekKey(todayKey, 1);
+  const weekEndKey = addCalendarDays(weekStartKey, 7);
+  const prevStartKey = addCalendarDays(weekStartKey, -7);
+  const prevStart = localDateTimeToUtc(prevStartKey, timeZone, 0);
 
   // Everything since the start of LAST week, so the comparison is one query.
   const [logs, tasks, pages, memories] = await Promise.all([
@@ -98,12 +92,16 @@ export async function buildHighlights(userId: string): Promise<Highlights> {
   const thisWeek = <T>(items: T[], when: (t: T) => Date | null) =>
     items.filter((t) => {
       const d = when(t);
-      return d ? d >= weekStart && d < weekEnd : false;
+      if (!d) return false;
+      const key = localDateKey(d, timeZone);
+      return key >= weekStartKey && key < weekEndKey;
     });
   const lastWeek = <T>(items: T[], when: (t: T) => Date | null) =>
     items.filter((t) => {
       const d = when(t);
-      return d ? d >= prevStart && d < weekStart : false;
+      if (!d) return false;
+      const key = localDateKey(d, timeZone);
+      return key >= prevStartKey && key < weekStartKey;
     });
 
   const workouts = logs.filter((l) => l.kind === "workout");
@@ -124,26 +122,24 @@ export async function buildHighlights(userId: string): Promise<Highlights> {
   const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   const days: DayBar[] = [];
   for (let i = 0; i < 7; i++) {
-    const date = new Date(weekStart.getTime() + i * DAY);
-    const next = new Date(date.getTime() + DAY);
-    const inDay = (d: Date) => d >= date && d < next;
+    const dayKey = addCalendarDays(weekStartKey, i);
+    const inDay = (d: Date) => localDateKey(d, timeZone) === dayKey;
     days.push({
       label: DAY_LABELS[i],
       workouts: wWorkouts.filter((l) => inDay(l.occurredAt)).length,
       other: thisWeek(logs, (l) => l.occurredAt).filter(
         (l) => l.kind !== "workout" && inDay(l.occurredAt)
       ).length,
-      future: date.getTime() > today.getTime(),
-      today: date.getTime() === today.getTime(),
+      future: dayKey > todayKey,
+      today: dayKey === todayKey,
     });
   }
 
   // ---- streak ---------------------------------------------------------
-  const workoutDays = new Set(workouts.map((l) => startOfDay(l.occurredAt).getTime()));
+  const workoutDays = new Set(workouts.map((l) => localDateKey(l.occurredAt, timeZone)));
   let streakDays = 0;
   for (let i = 0; i < 60; i++) {
-    const d = today.getTime() - i * DAY;
-    if (workoutDays.has(d)) streakDays++;
+    if (workoutDays.has(addCalendarDays(todayKey, -i))) streakDays++;
     // Not having trained *yet* today doesn't break a streak; yesterday would.
     else if (i > 0) break;
   }
@@ -192,16 +188,15 @@ export async function buildHighlights(userId: string): Promise<Highlights> {
     at: m.createdAt.getTime(),
   }));
 
-  const fmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
-  const lastDay = new Date(Math.min(weekEnd.getTime() - DAY, today.getTime()));
-  const dayOfWeek = Math.min(7, Math.floor((today.getTime() - weekStart.getTime()) / DAY) + 1);
+  const lastDayKey = todayKey < weekEndKey ? todayKey : addCalendarDays(weekEndKey, -1);
+  const dayOfWeek = Math.min(7, Math.max(1, Math.round((Date.parse(`${todayKey}T12:00:00Z`) - Date.parse(`${weekStartKey}T12:00:00Z`)) / DAY) + 1));
 
   const total = wTasks.length + wWorkouts.length + wPages.length + wMemories.length;
 
   return {
-    weekStart: weekStart.toISOString(),
-    weekEnd: weekEnd.toISOString(),
-    rangeLabel: `${fmt.format(weekStart)} – ${fmt.format(lastDay)}`,
+    weekStart: localDateTimeToUtc(weekStartKey, timeZone, 0).toISOString(),
+    weekEnd: localDateTimeToUtc(weekEndKey, timeZone, 0).toISOString(),
+    rangeLabel: `${formatCalendarKey(weekStartKey, timeZone, { month: "short", day: "numeric" })} – ${formatCalendarKey(lastDayKey, timeZone, { month: "short", day: "numeric" })}`,
     dayOfWeek,
     streakDays,
     metrics,

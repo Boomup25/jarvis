@@ -564,6 +564,8 @@ const MIN_CHUNK = 70;
 const MIN_FIRST_CHUNK = 12;
 /** Force a break here even mid-sentence, so one long run-on can't stall the audio. */
 const MAX_CHUNK = 240;
+/** Small breathing space between independently synthesised sentences. */
+const CHUNK_GAP_MS = 120;
 
 /** Strip markdown so it isn't read out as punctuation soup. */
 function clean(text: string): string {
@@ -862,7 +864,7 @@ export function useSpeechOutput() {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
     const utterance = new SpeechSynthesisUtterance(text);
     if (voiceRef.current) utterance.voice = voiceRef.current;
-    utterance.rate = 1.02;
+    utterance.rate = 0.94;
     utterance.pitch = 0.92;
     const settle = () => {
       setSpeaking(false);
@@ -948,7 +950,7 @@ export function useSpeechOutput() {
       }
       audio.src = url;
       audio.onended = () => {
-        if (gen === genRef.current) playNext();
+        if (gen === genRef.current) window.setTimeout(() => playNext(), CHUNK_GAP_MS);
       };
       audio.onerror = () => {
         if (gen === genRef.current) playNext();

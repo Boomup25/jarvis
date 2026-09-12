@@ -2,6 +2,7 @@ import type { Memory, Profile } from "@prisma/client";
 import { pageIndex, findSimilarPages, STRONG_MATCH } from "./pages";
 import { recallMemories } from "./memory";
 import { getProfile, prisma } from "./db";
+import { localDateKey } from "./localTime";
 
 function formatProfile(profile: Profile): string {
   const data = (profile.data ?? {}) as Record<string, unknown>;
@@ -64,7 +65,7 @@ export async function buildSystemPrompt(userId: string, userMessage: string) {
     ? recentLogs
         .map(
           (l) =>
-            `- ${l.occurredAt.toISOString().slice(0, 10)} ${l.kind}${l.pageSlug ? ` (${l.pageSlug})` : ""}${
+            `- ${localDateKey(l.occurredAt, profile.timezone || "America/Chicago")} ${l.kind}${l.pageSlug ? ` (${l.pageSlug})` : ""}${
               l.note ? `: ${l.note}` : ""
             }`
         )
@@ -103,6 +104,9 @@ ${matchBlock}
 3. When he tells you something durable about himself, call remember. Body stats, goals, allergies,
    equipment, schedule, preferences. Not one-off requests.
 4. When he reports doing something — finished a workout, ate a meal, weighed in — call log_activity.
+   Call it exactly once for each activity. For “today” or “just now”, omit occurred_at so the
+   server records the current instant. Only provide occurred_at when he explicitly names a past
+   date, and never create a future activity date.
 5. Use his memories and activity log to make things specific. A workout should account for what he
    trained recently and what equipment he actually has. A recipe should respect his dietary rules.
 6. You can search the web with search_web when the answer depends on current facts —

@@ -9,6 +9,7 @@ import { findSimilarPages, normalizeType, uniqueSlug, PAGE_TYPES } from "./pages
 import { webSearch } from "./openrouter";
 import type { ToolSchema } from "./openrouter";
 import { runOnMachine, type BridgeContext } from "./bridgeTools";
+import { createActivity } from "./activity";
 
 export interface ToolContext {
   /** Whose data this tool may touch. Every query below is scoped to it. */
@@ -280,6 +281,10 @@ const tools: Record<string, ToolDef> = {
             page_slug: { type: "string", description: "The page this relates to, if any" },
             note: { type: "string" },
             value: { type: "object", description: "Structured numbers, e.g. {\"weightLb\": 184} or {\"sets\": 20}" },
+            occurred_at: {
+              type: "string",
+              description: "Optional ISO 8601 timestamp only when the user explicitly names a past date. Omit for today/now; never invent a future date.",
+            },
           },
           required: ["kind"],
         },
@@ -294,17 +299,18 @@ const tools: Record<string, ToolDef> = {
             select: { slug: true },
           })
         : null;
-      const entry = await prisma.logEntry.create({
-        data: {
-          userId: ctx.userId,
-          kind,
-          pageSlug: exists?.slug ?? null,
-          note: String(args.note ?? ""),
-          value: typeof args.value === "object" && args.value ? args.value : {},
-        },
+      const result = await createActivity({
+        userId: ctx.userId,
+        kind,
+        pageSlug: exists?.slug ?? null,
+        note: String(args.note ?? "").trim(),
+        value: typeof args.value === "object" && args.value ? args.value : {},
+        occurredAt: args.occurred_at,
       });
-      ctx.emit({ type: "activity_logged", kind, id: entry.id });
-      return { ok: true, id: entry.id };
+      if (!result.deduplicated) {
+        ctx.emit({ type: "activity_logged", kind, id: result.log.id, date: result.log.occurredAt.toISOString() });
+      }
+      return { ok: true, id: result.log.id, occurred_at: result.log.occurredAt.toISOString(), deduplicated: result.deduplicated };
     },
   },
 
