@@ -25,7 +25,14 @@
         }
       ],
       "expo-asset",
-      "expo-status-bar"
+      "expo-status-bar",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "JARVIS uses the microphone when you choose to speak.",
+          "speechRecognitionPermission": "JARVIS uses speech recognition to transcribe your request."
+        }
+      ]
     ]
   }
 }

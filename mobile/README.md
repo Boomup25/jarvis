@@ -1,10 +1,12 @@
 # JARVIS iOS client
 
-This is the first native client slice: secure login, chat, bridge voice status,
-and playback of the same JARVIS audio returned by `/api/speak`.
+This is the native client: secure login, the JARVIS dashboard, chat, library,
+memory, week view, bridge voice status, and playback of the same JARVIS audio
+returned by `/api/speak`.
 
-The project targets the current Expo SDK 57 release so it can open in the
-current Expo Go app.
+The project targets Expo SDK 57. Microphone transcription uses the native
+`expo-speech-recognition` module, so voice input requires a development build;
+it is not available in the standard Expo Go client.
 
 ```bash
 cd mobile
@@ -14,9 +16,15 @@ copy .env.example .env
 npm start
 ```
 
-Use Expo Go for an early device test, or use an EAS/Xcode iOS build for a
-standalone app. The app stores the mobile session token in iOS Keychain via
-`expo-secure-store`.
+For text and the rest of the UI, `npm start` is enough. To test the microphone,
+install a development build and start Metro for that build:
+
+```bash
+npx eas build --profile development --platform ios
+npx expo start --dev-client
+```
+
+The app stores the mobile session token in iOS Keychain via `expo-secure-store`.
 
 The app calls `/api/speak` after each reply. If Voice → Synthesised by is
 **Machine** or **Auto** and the Windows bridge is connected, the server asks the
