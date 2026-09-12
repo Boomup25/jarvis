@@ -139,7 +139,7 @@ async function startVoiceServerOnce(config = null) {
     voiceServerProcess = null;
     send("bridge-log", `\nVoice server stopped (${code ?? signal ?? "unknown"}).\n`);
   });
-  send("bridge-log", `\nStarting LuxTTS voice server on port ${args[3]}…\n`);
+  send("bridge-log", `\nStarting LuxTTS voice server on port ${settings.port}…\n`);
   return { ok: true, running: true, starting: true };
 }
 
@@ -167,6 +167,21 @@ function stopVoiceServer() {
   voiceServerProcess.kill();
   voiceServerProcess = null;
   return { ok: true };
+}
+
+async function restartVoiceServer(config) {
+  const wasRunning = Boolean(voiceServerProcess);
+  stopVoiceServer();
+  if (wasRunning) await new Promise((done) => setTimeout(done, 350));
+  return startVoiceServer(config);
+}
+
+async function updateVoiceServerSettings(config, patch) {
+  const current = voiceServerSettings(config);
+  preferences.voiceServer = { ...current, ...patch };
+  savePreferences();
+  const result = voiceServerProcess ? await restartVoiceServer(config) : { ok: true };
+  return { ...result, settings: await getVoiceServerSettings() };
 }
 
 function launchAccess() {
@@ -288,6 +303,10 @@ function commandHelp() {
   voice start                   Start the configured local voice server
   voice stop                    Stop the local voice server
   voice status                  Check the local voice server
+  voice restart                 Restart it after changing settings
+  voice speed <0.25-2.0>        Set speech speed (0.68 is the default)
+  voice ref <absolute-path>     Set the reference recording
+  voice settings                Show voice settings and status
   say "text"                   Test the configured JARVIS voice
   clear                         Clear this window's log`;
 }
@@ -350,7 +369,41 @@ async function runCommand(line) {
       const healthy = voiceServerProcess ? true : await voiceServerHealthy(settings.port);
       return { ok: true, output: healthy ? `Voice server is running on port ${settings.port}.` : "Voice server is not running." };
     }
-    return { ok: false, output: "Usage: voice start, voice stop, or voice status" };
+    if (action === "settings" || action === "config") {
+      const settings = await getVoiceServerSettings();
+      return {
+        ok: true,
+        output: [
+          `Voice server: ${settings.running ? "running" : "stopped"}`,
+          `Autostart: ${settings.enabled ? "on" : "off"}`,
+          `Speed: ${settings.speed}`,
+          `Port: ${settings.port}`,
+          `Reference: ${settings.referencePath}`,
+          `Python: ${settings.pythonPath}`,
+        ].join("\n"),
+      };
+    }
+    if (action === "restart") {
+      const result = await restartVoiceServer(config);
+      return { ok: result.ok, output: result.ok ? (result.skipped ? "Automatic voice server startup is disabled. Enable it in Settings." : "Voice server restarting in the background.") : result.error };
+    }
+    if (action === "speed") {
+      const raw = args[2];
+      if (raw == null) return { ok: true, output: `Voice speed is ${voiceServerSettings(config).speed}.` };
+      const speed = Number(raw);
+      if (!Number.isFinite(speed) || speed < 0.25 || speed > 2) return { ok: false, output: "Choose a voice speed between 0.25 and 2.0." };
+      const result = await updateVoiceServerSettings(config, { speed: speed.toFixed(2) });
+      return { ok: result.ok, output: result.ok ? `Voice speed set to ${speed.toFixed(2)}${result.starting ? ". Voice server restarting in the background." : "."}` : result.error };
+    }
+    if (action === "ref" || action === "reference") {
+      const referencePath = args.slice(2).join(" ");
+      if (!referencePath) return { ok: false, output: "Usage: voice ref \"C:\\path\\to\\voice.wav\"" };
+      const resolvedReference = resolve(referencePath);
+      if (!existsSync(resolvedReference)) return { ok: false, output: `Reference recording was not found at ${resolvedReference}` };
+      const result = await updateVoiceServerSettings(config, { referencePath: resolvedReference });
+      return { ok: result.ok, output: result.ok ? `Reference recording set to ${resolvedReference}${result.starting ? ". Voice server restarting in the background." : "."}` : result.error };
+    }
+    return { ok: false, output: "Usage: voice start, voice stop, voice status, voice restart, voice speed <value>, voice ref <path>, or voice settings" };
   }
   if (command === "restart") {
     const passphrase = await unlockPassphrase();
