@@ -184,6 +184,49 @@ async function updateVoiceServerSettings(config, patch) {
   return { ...result, settings: await getVoiceServerSettings() };
 }
 
+function voiceMode(config) {
+  if (config?.speech?.engine === "http") return "quality";
+  if (config?.speech?.engine === "sapi") return "light";
+  return config?.speech?.engine ?? "default";
+}
+
+async function restartBridgeAfterVoiceChange() {
+  const passphrase = await unlockPassphrase();
+  if (bridgeProcess) {
+    stopBridge();
+    await new Promise((done) => setTimeout(done, 250));
+  }
+  if (passphrase) startBridge(passphrase);
+  return Boolean(passphrase);
+}
+
+async function setVoiceMode(mode) {
+  const { loadConfig, saveConfig } = await import(configModuleUrl);
+  const config = loadConfig();
+  if (!config) return { ok: false, error: "Pair this computer before changing voice mode." };
+  const nextMode = String(mode ?? "").toLowerCase();
+  if (!["quality", "light"].includes(nextMode)) {
+    return { ok: false, error: "Use voice mode quality or voice mode light." };
+  }
+
+  const nextSpeech = nextMode === "quality"
+    ? { ...config.speech, engine: "http", url: "http://127.0.0.1:5111/speak" }
+    : { ...config.speech, engine: "sapi" };
+  saveConfig({ ...config, speech: nextSpeech });
+  preferences.voiceServer = { ...voiceServerSettings(config), enabled: nextMode === "quality" };
+  savePreferences();
+
+  if (nextMode === "light") {
+    stopVoiceServer();
+  }
+  const reconnected = await restartBridgeAfterVoiceChange();
+  if (nextMode === "quality") {
+    const result = await startVoiceServer({ ...config, speech: nextSpeech });
+    if (!result.ok) return result;
+  }
+  return { ok: true, mode: nextMode, reconnected };
+}
+
 function launchAccess() {
   return preferences.launchApps && typeof preferences.launchApps === "object" ? preferences.launchApps : {};
 }
@@ -304,7 +347,9 @@ function commandHelp() {
   voice stop                    Stop the local voice server
   voice status                  Check the local voice server
   voice restart                 Restart it after changing settings
-  voice speed <0.25-2.0>        Set speech speed (0.68 is the default)
+  voice mode quality             Use LuxTTS (GPU, cloned voice)
+  voice mode light               Use Windows voice (no GPU)
+  voice speed <0.55-1.15>       Set speech speed (0.68 is the default)
   voice ref <absolute-path>     Set the reference recording
   voice settings                Show voice settings and status
   say "text"                   Test the configured JARVIS voice
@@ -369,12 +414,25 @@ async function runCommand(line) {
       const healthy = voiceServerProcess ? true : await voiceServerHealthy(settings.port);
       return { ok: true, output: healthy ? `Voice server is running on port ${settings.port}.` : "Voice server is not running." };
     }
+    if (action === "mode") {
+      if (!args[2]) return { ok: true, output: `Voice mode is ${voiceMode(config)}.` };
+      const result = await setVoiceMode(args[2]);
+      return {
+        ok: result.ok,
+        output: result.ok
+          ? result.mode === "light"
+            ? "Light voice enabled. LuxTTS is stopped and the GPU is free for games."
+            : "Quality voice enabled. LuxTTS is starting in the background."
+          : result.error,
+      };
+    }
     if (action === "settings" || action === "config") {
       const settings = await getVoiceServerSettings();
       return {
         ok: true,
         output: [
           `Voice server: ${settings.running ? "running" : "stopped"}`,
+          `Mode: ${voiceMode(config)}`,
           `Autostart: ${settings.enabled ? "on" : "off"}`,
           `Speed: ${settings.speed}`,
           `Port: ${settings.port}`,
@@ -391,7 +449,7 @@ async function runCommand(line) {
       const raw = args[2];
       if (raw == null) return { ok: true, output: `Voice speed is ${voiceServerSettings(config).speed}.` };
       const speed = Number(raw);
-      if (!Number.isFinite(speed) || speed < 0.25 || speed > 2) return { ok: false, output: "Choose a voice speed between 0.25 and 2.0." };
+      if (!Number.isFinite(speed) || speed < 0.55 || speed > 1.15) return { ok: false, output: "Choose a voice speed between 0.55 and 1.15." };
       const result = await updateVoiceServerSettings(config, { speed: speed.toFixed(2) });
       return { ok: result.ok, output: result.ok ? `Voice speed set to ${speed.toFixed(2)}${result.starting ? ". Voice server restarting in the background." : "."}` : result.error };
     }
