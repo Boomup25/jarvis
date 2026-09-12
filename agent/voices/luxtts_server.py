@@ -44,7 +44,10 @@ _lock = threading.Lock()
 _speed = 0.68
 _t_shift = 0.9
 _smooth = True
-_output_rate = 24000
+# Both LinaCodec output paths return 48 kHz audio. The smooth branch resamples
+# its 24 kHz prediction to 48 kHz before returning it. Keeping the WAV header
+# at 48 kHz prevents browsers from playing the voice at half speed.
+_output_rate = 48000
 _ref_rms = 0.01
 _ref_duration = 5
 LUXTTS_ROOT = Path(__file__).resolve().parent / "LuxTTS"
@@ -103,7 +106,7 @@ def synthesise(text: str) -> bytes:
     with wave.open(buf, "wb") as w:
         w.setnchannels(1)
         w.setsampwidth(2)
-        # The smoother vocoder path is 24 kHz; the normal merged path is 48 kHz.
+        # LinaCodec returns both the smooth and merged paths at 48 kHz.
         w.setframerate(_output_rate)
         w.writeframes(pcm.tobytes())
     return buf.getvalue()
@@ -189,7 +192,7 @@ def main():
         "--smooth",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Use LuxTTS's smoother 24 kHz vocoder path to reduce metallic artifacts.",
+        help="Use LuxTTS's smoother vocoder path to reduce metallic artifacts.",
     )
     ap.add_argument(
         "--device",
@@ -201,7 +204,7 @@ def main():
     _speed = max(0.55, min(1.15, args.speed))
     _t_shift = max(0.3, min(1.2, args.t_shift))
     _smooth = bool(args.smooth)
-    _output_rate = 24000 if _smooth else 48000
+    _output_rate = 48000
     print(
         f"Speech settings: speed={_speed:.2f}, t_shift={_t_shift:.2f}, "
         f"smooth={_smooth}, sample_rate={_output_rate}",
