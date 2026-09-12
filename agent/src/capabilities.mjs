@@ -11,7 +11,7 @@
  * allowed folder can still point outside it.
  */
 
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { readdir, readFile, realpath, stat, writeFile, mkdir } from "node:fs/promises";
 import { arch, cpus, homedir, hostname, platform, totalmem, release } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
@@ -20,6 +20,16 @@ import { isDenied, resolveWithinRoots } from "./config.mjs";
 import { speak, availableEngines, defaultEngine } from "./speech.mjs";
 
 const run = promisify(execFile);
+
+function handOffWindowsLaunch(target) {
+  const child = spawn("cmd", ["/c", "start", "", target], {
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
+  });
+  child.once("error", () => {});
+  child.unref();
+}
 
 // Launching an app by name is useful, but an unrestricted command runner would
 // turn a prompt into arbitrary code execution. Keep this list explicit and
@@ -358,7 +368,7 @@ const handlers = {
           throw new Refused(`Launching ${located.title} is disabled in Bridge Settings.`);
         }
         const steamUri = `steam://rungameid/${located.appId}`;
-        await run("cmd", ["/c", "start", "", steamUri], { windowsHide: true });
+        handOffWindowsLaunch(steamUri);
         return {
           opened: steamUri,
           executable: located.executable,
@@ -370,7 +380,7 @@ const handlers = {
       if (!launchIsAllowed(config, `game:${normalizedName(game)}`)) {
         throw new Refused(`Launching ${located.title} is disabled in Bridge Settings.`);
       }
-      await run("cmd", ["/c", "start", "", located.executable], { windowsHide: true });
+      handOffWindowsLaunch(located.executable);
       return { opened: located.executable, game: located.title, summary: `Launched ${located.title}` };
     }
 
@@ -393,7 +403,7 @@ const handlers = {
     if (platform() === "win32") {
       // `start` is a cmd builtin; the empty string is the window title, which
       // it otherwise steals from a quoted first argument.
-      await run("cmd", ["/c", "start", "", opened], { windowsHide: true });
+      handOffWindowsLaunch(opened);
     } else if (platform() === "darwin") {
       await run("open", [opened]);
     } else {
