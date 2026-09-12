@@ -56,7 +56,25 @@ export async function GET(req: Request) {
   const stream = new ReadableStream({
     async start(controller) {
       const send = (event: string, data: unknown) => {
-        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        try {
+          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        } catch {
+          // The client already went away. The stream cancel handler will
+          // remove the registry entry when the runtime observes it.
+          return;
+        }
+
+        // A reconnect for the same device replaces the previous registry
+        // entry. Close the old SSE immediately after notifying its client;
+        // leaving it open creates a ghost connection that can be replaced
+        // again on every later reconnect.
+        if (event === "closed") {
+          try {
+            controller.close();
+          } catch {
+            /* already closed */
+          }
+        }
       };
 
       send("ready", { deviceId: device.id, name: device.name });
