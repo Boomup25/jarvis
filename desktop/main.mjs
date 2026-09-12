@@ -19,6 +19,18 @@ let bridgeProcess = null;
 let bridgeState = "stopped";
 let preferences = {};
 let transcriberPromise = null;
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+
+if (!hasSingleInstanceLock) {
+  app.quit();
+}
+
+app.on("second-instance", () => {
+  if (!windowRef || windowRef.isDestroyed()) return;
+  if (windowRef.isMinimized()) windowRef.restore();
+  windowRef.show();
+  windowRef.focus();
+});
 
 function send(channel, value) {
   if (!windowRef || windowRef.isDestroyed()) return;
@@ -378,10 +390,19 @@ function createWindow() {
   windowRef.on("minimize", () => showOrbWindow());
   windowRef.on("show", hideOrbWindow);
   windowRef.on("restore", hideOrbWindow);
-  windowRef.on("closed", () => { windowRef = null; });
+  windowRef.on("closed", () => {
+    windowRef = null;
+    // The orb is normally hidden, but a hidden BrowserWindow still keeps the
+    // Electron process alive. Closing the console must therefore close the orb
+    // and stop the bridge explicitly instead of relying on window-all-closed.
+    if (orbWindow && !orbWindow.isDestroyed()) orbWindow.close();
+    stopBridge();
+    if (!app.isQuitting) app.quit();
+  });
 }
 
 app.whenReady().then(async () => {
+  if (!hasSingleInstanceLock) return;
   loadPreferences();
   Menu.setApplicationMenu(null);
   createWindow();
@@ -419,4 +440,11 @@ app.whenReady().then(async () => {
   if (config.paired && passphrase) startBridge(passphrase);
 });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
-app.on("before-quit", () => { if (bridgeProcess) bridgeProcess.kill(); });
+app.on("before-quit", () => {
+  app.isQuitting = true;
+  if (orbWindow && !orbWindow.isDestroyed()) orbWindow.destroy();
+  if (bridgeProcess) {
+    bridgeProcess.kill();
+    bridgeProcess = null;
+  }
+});

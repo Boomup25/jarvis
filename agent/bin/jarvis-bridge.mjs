@@ -233,7 +233,14 @@ async function start() {
 
   for (;;) {
     try {
-      await connect(config, token, capabilities);
+      const outcome = await connect(config, token, capabilities);
+      if (outcome?.replaced) {
+        console.error(
+          "\nThis bridge connection was replaced by another copy using the same device token.\n" +
+            "Close the other JARVIS Bridge window or terminal, then start only one bridge.\n"
+        );
+        return;
+      }
       backoff = RECONNECT_MIN_MS; // a clean close means the server is fine
       log("Disconnected. Reconnecting…");
     } catch (err) {
@@ -295,7 +302,10 @@ async function connect(config, token, capabilities) {
       }
 
       if (event === "ready") log(`Registered as ${payload.name}`);
-      else if (event === "closed") log(`Server closed this connection: ${payload.reason}`);
+      else if (event === "closed") {
+        log(`Server closed this connection: ${payload.reason}`);
+        if (payload.reason === "replaced") return { replaced: true };
+      }
       else if (event === "command") void handle(payload, config, token);
     }
   }

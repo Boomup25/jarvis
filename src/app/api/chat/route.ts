@@ -154,7 +154,8 @@ export async function POST(req: Request) {
 
 ## CONNECTED COMPUTER
 A bridge-connected computer is available for this turn. When the user asks you to inspect, list,
-search, read, create, or update a file on that computer, use the matching computer_* tool. Do not
+search, read, create, update a file, launch an installed app, or launch a Steam game on that
+computer, use the matching computer_* tool. Do not
 claim you lack computer access while these tools are available. Use an absolute path inside a shared
 folder. If the user has not given a path, list or search the shared folders first. The bridge can
 read text files and write text files, and it refuses protected folders and binary files.`

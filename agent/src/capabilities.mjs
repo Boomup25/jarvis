@@ -14,12 +14,135 @@
 import { execFile } from "node:child_process";
 import { readdir, readFile, realpath, stat, writeFile, mkdir } from "node:fs/promises";
 import { arch, cpus, homedir, hostname, platform, totalmem, release } from "node:os";
-import { dirname, extname, join, relative } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import { isDenied, resolveWithinRoots } from "./config.mjs";
 import { speak, availableEngines, defaultEngine } from "./speech.mjs";
 
 const run = promisify(execFile);
+
+// Launching an app by name is useful, but an unrestricted command runner would
+// turn a prompt into arbitrary code execution. Keep this list explicit and
+// require a shared absolute path for anything outside it.
+const APP_ALIASES = {
+  calculator: "calc.exe",
+  chrome: "chrome.exe",
+  discord: "discord.exe",
+  edge: "msedge.exe",
+  explorer: "explorer.exe",
+  "file explorer": "explorer.exe",
+  notepad: "notepad.exe",
+  outlook: "outlook.exe",
+  paint: "mspaint.exe",
+  powershell: "powershell.exe",
+  settings: "ms-settings:",
+  spotify: "spotify:",
+  steam: "steam.exe",
+  teams: "msteams:",
+  terminal: "wt.exe",
+  "task manager": "taskmgr.exe",
+  "visual studio code": "code.exe",
+  vscode: "code.exe",
+  word: "winword.exe",
+};
+
+function appAlias(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[._-]+/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function normalizedName(value) {
+  return String(value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+/** Find a game executable under a shared Steam common folder. */
+async function findSteamGame(gameName, config) {
+  if (platform() !== "win32") throw new Refused("Steam game launching is currently supported on Windows only.");
+
+  const wanted = normalizedName(gameName);
+  if (!wanted) throw new Refused("Give me the name of the game to launch.");
+
+  for (const root of config.roots) {
+    const common = resolve(root);
+    const rootName = common.toLowerCase().replaceAll("/", "\\");
+    if (!/(?:^|\\)steamapps\\common$/i.test(rootName)) continue;
+
+    let folders;
+    try {
+      folders = await readdir(common, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    const manifestMatches = await readSteamManifests(dirname(common), wanted);
+    const manifestFolders = new Set(manifestMatches.map((entry) => normalizedName(entry.installdir)));
+    const gameFolders = folders.filter((entry) => {
+      if (!entry.isDirectory()) return false;
+      const folder = normalizedName(entry.name);
+      return folder.includes(wanted) || wanted.includes(folder) || manifestFolders.has(folder);
+    });
+    for (const folder of gameFolders) {
+      const candidates = [];
+      await collectExecutables(join(common, folder.name), 0, candidates);
+      candidates.sort((a, b) => scoreExecutable(b, wanted, folder.name) - scoreExecutable(a, wanted, folder.name));
+      if (candidates.length) return candidates[0];
+    }
+  }
+
+  throw new Refused(`I couldn't find an executable for "${gameName}" in the shared Steam games folder.`);
+
+  async function readSteamManifests(steamapps, requested) {
+    let entries;
+    try {
+      entries = await readdir(steamapps, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+
+    const matches = [];
+    for (const entry of entries) {
+      if (!entry.isFile() || !/^appmanifest_\d+\.acf$/i.test(entry.name)) continue;
+      const text = await readFile(join(steamapps, entry.name), "utf8").catch(() => "");
+      const name = text.match(/"name"\s+"([^"]+)"/i)?.[1] ?? "";
+      const installdir = text.match(/"installdir"\s+"([^"]+)"/i)?.[1] ?? "";
+      const normalized = normalizedName(name);
+      if (installdir && normalized && (normalized.includes(requested) || requested.includes(normalized))) {
+        matches.push({ name, installdir });
+      }
+    }
+    return matches;
+  }
+
+  async function collectExecutables(dir, depth, out) {
+    if (depth > 4 || out.length >= 80 || isDenied(dir, config.denyNames)) return;
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (isDenied(join(dir, entry.name), config.denyNames)) continue;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) await collectExecutables(full, depth + 1, out);
+      else if (entry.isFile() && extname(entry.name).toLowerCase() === ".exe") out.push(full);
+    }
+  }
+
+  function scoreExecutable(file, wantedName, folderName) {
+    const stem = normalizedName(basename(file, ".exe"));
+    let score = 0;
+    if (stem === wantedName) score += 100;
+    if (stem === normalizedName(folderName)) score += 80;
+    if (stem.includes(wantedName) || wantedName.includes(stem)) score += 30;
+    if (/(crash|unins|install|setup|redist|helper|benchmark)/i.test(stem)) score -= 100;
+    if (/(launcher|bootstrap|start)/i.test(stem)) score -= 10;
+    return score;
+  }
+}
 
 class Refused extends Error {
   constructor(message) {
@@ -206,14 +329,27 @@ const handlers = {
    * Open a file, folder or link with whatever the OS considers its default.
    *
    * Deliberately not a way to run a program of the caller's choosing: the
-   * target must be inside a shared root, or an http(s) URL.
+   * target must be inside a shared root, an http(s) URL, or one of the
+   * explicitly allowlisted installed-app names above.
    */
   async "app.open"(args, config) {
     const target = String(args.target ?? "").trim();
     if (!target) throw new Refused("Nothing to open.");
 
+    if (/^steam-game:/i.test(target)) {
+      const game = target.replace(/^steam-game:/i, "").trim();
+      const opened = await findSteamGame(game, config);
+      await run("cmd", ["/c", "start", "", opened], { windowsHide: true });
+      return { opened, game, summary: `Launched ${game}` };
+    }
+
     const isUrl = /^https?:\/\//i.test(target);
-    const opened = isUrl ? target : await safePath(target, config);
+    const alias = APP_ALIASES[appAlias(target)];
+    const opened = isUrl
+      ? target
+      : alias && !isAbsolute(target)
+        ? alias
+        : await safePath(target, config);
 
     if (platform() === "win32") {
       // `start` is a cmd builtin; the empty string is the window title, which

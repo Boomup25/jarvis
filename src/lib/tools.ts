@@ -506,7 +506,10 @@ const machineTools: Record<string, ToolDef & { needs: string }> = {
       function: {
         name: "computer_open",
         description:
-          "Open a file, folder or https link on the user's connected computer with its default app.",
+          "Open a file, folder or https link on the user's connected computer with its default app, " +
+          "or launch a supported installed app by name (for example Chrome, Edge, Steam, Spotify, " +
+          "VS Code, Terminal, Calculator, or File Explorer). For another app, use its full absolute " +
+          "executable path inside a shared folder.",
         parameters: {
           type: "object",
           properties: { target: { type: "string" } },
@@ -515,6 +518,26 @@ const machineTools: Record<string, ToolDef & { needs: string }> = {
       },
     },
     handler: async (args, ctx) => machineCall(ctx, "app.open", { target: String(args.target ?? "") }),
+  },
+
+  computer_launch_game: {
+    needs: "app.open",
+    schema: {
+      type: "function",
+      function: {
+        name: "computer_launch_game",
+        description:
+          "Launch a Windows game by name from the user's shared Steam steamapps\\common folder. " +
+          "Use the installed game title, such as 'Hades' or 'Stardew Valley'.",
+        parameters: {
+          type: "object",
+          properties: { name: { type: "string", description: "Installed Steam game title" } },
+          required: ["name"],
+        },
+      },
+    },
+    handler: async (args, ctx) =>
+      machineCall(ctx, "app.open", { target: `steam-game:${String(args.name ?? "")}` }),
   },
 
   computer_info: {
