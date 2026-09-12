@@ -77,7 +77,12 @@ async function findSteamGame(gameName, config) {
       continue;
     }
 
-    const manifestMatches = await readSteamManifests(dirname(common), wanted);
+    const manifests = await readSteamManifests(dirname(common));
+    const manifestMatches = manifests.filter((entry) => {
+      const name = normalizedName(entry.name);
+      const installdir = normalizedName(entry.installdir);
+      return name.includes(wanted) || wanted.includes(name) || installdir.includes(wanted) || wanted.includes(installdir);
+    });
     const manifestFolders = new Set(manifestMatches.map((entry) => normalizedName(entry.installdir)));
     const gameFolders = folders.filter((entry) => {
       if (!entry.isDirectory()) return false;
@@ -88,13 +93,18 @@ async function findSteamGame(gameName, config) {
       const candidates = [];
       await collectExecutables(join(common, folder.name), 0, candidates);
       candidates.sort((a, b) => scoreExecutable(b, wanted, folder.name) - scoreExecutable(a, wanted, folder.name));
-      if (candidates.length) return candidates[0];
+      if (candidates.length) {
+        const manifest = manifests.find(
+          (entry) => normalizedName(entry.installdir) === normalizedName(folder.name)
+        );
+        return { executable: candidates[0], appId: manifest?.appId ?? "", title: manifest?.name || gameName };
+      }
     }
   }
 
   throw new Refused(`I couldn't find an executable for "${gameName}" in the shared Steam games folder.`);
 
-  async function readSteamManifests(steamapps, requested) {
+  async function readSteamManifests(steamapps) {
     let entries;
     try {
       entries = await readdir(steamapps, { withFileTypes: true });
@@ -106,12 +116,10 @@ async function findSteamGame(gameName, config) {
     for (const entry of entries) {
       if (!entry.isFile() || !/^appmanifest_\d+\.acf$/i.test(entry.name)) continue;
       const text = await readFile(join(steamapps, entry.name), "utf8").catch(() => "");
+      const appId = text.match(/"appid"\s+"(\d+)"/i)?.[1] ?? "";
       const name = text.match(/"name"\s+"([^"]+)"/i)?.[1] ?? "";
       const installdir = text.match(/"installdir"\s+"([^"]+)"/i)?.[1] ?? "";
-      const normalized = normalizedName(name);
-      if (installdir && normalized && (normalized.includes(requested) || requested.includes(normalized))) {
-        matches.push({ name, installdir });
-      }
+      if (appId && installdir) matches.push({ appId, name, installdir });
     }
     return matches;
   }
@@ -338,9 +346,20 @@ const handlers = {
 
     if (/^steam-game:/i.test(target)) {
       const game = target.replace(/^steam-game:/i, "").trim();
-      const opened = await findSteamGame(game, config);
-      await run("cmd", ["/c", "start", "", opened], { windowsHide: true });
-      return { opened, game, summary: `Launched ${game}` };
+      const located = await findSteamGame(game, config);
+      if (located.appId) {
+        const steamUri = `steam://rungameid/${located.appId}`;
+        await run("cmd", ["/c", "start", "", steamUri], { windowsHide: true });
+        return {
+          opened: steamUri,
+          executable: located.executable,
+          appId: located.appId,
+          game: located.title,
+          summary: `Sent ${located.title} to Steam to launch.`,
+        };
+      }
+      await run("cmd", ["/c", "start", "", located.executable], { windowsHide: true });
+      return { opened: located.executable, game: located.title, summary: `Launched ${located.title}` };
     }
 
     const isUrl = /^https?:\/\//i.test(target);
