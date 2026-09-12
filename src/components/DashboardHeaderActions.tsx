@@ -21,6 +21,7 @@ export function DashboardHeaderActions({ isOwner }: { isOwner: boolean }) {
   const [layout, setLayout] = useState<ChatLayout>("presence");
   const [autoListen, setAutoListen] = useState(false);
   const [wakeWordEnabled, setWakeWordEnabled] = useState(true);
+  const [soundCues, setSoundCues] = useState(false);
 
   useEffect(() => {
     fetch("/api/settings")
@@ -36,6 +37,7 @@ export function DashboardHeaderActions({ isOwner }: { isOwner: boolean }) {
         }
         if (typeof settings.autoListen === "boolean") setAutoListen(settings.autoListen);
         if (typeof settings.wakeWordEnabled === "boolean") setWakeWordEnabled(settings.wakeWordEnabled);
+        if (typeof settings.soundCues === "boolean") setSoundCues(settings.soundCues);
       })
       .catch(() => {});
   }, []);
@@ -115,6 +117,11 @@ export function DashboardHeaderActions({ isOwner }: { isOwner: boolean }) {
         onWakeWordEnabledChange={(next) => {
           setWakeWordEnabled(next);
           save({ wakeWordEnabled: next });
+        }}
+        soundCues={soundCues}
+        onSoundCuesChange={(next) => {
+          setSoundCues(next);
+          save({ soundCues: next });
         }}
       />
     </>

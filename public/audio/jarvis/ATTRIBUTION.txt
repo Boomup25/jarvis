@@ -1,0 +1,9 @@
+JARVIS sound cues
+
+Audio source: openpeon-jarvis by FlynnCruse
+Repository: https://github.com/FlynnCruse/openpeon-jarvis
+License: CC-BY-NC-4.0 (Creative Commons Attribution-NonCommercial 4.0 International)
+
+The included audio is used under the repository license. Attribution is retained
+here with the asset bundle. The pack is a fan-made JARVIS sound pack and is not
+affiliated with or endorsed by Marvel, Disney, or Paul Bettany.

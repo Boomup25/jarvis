@@ -688,6 +688,8 @@ export function useSpeechOutput() {
   const [pending, setPending] = useState(false);
   /** Whether a reply is still streaming in, i.e. more text may yet arrive. */
   const feedOpenRef = useRef(false);
+  /** When true, a one-shot computer action is represented by sound cues. */
+  const cueOnlyRef = useRef(false);
   const urlsRef = useRef<string[]>([]);
   const controllersRef = useRef<AbortController[]>([]);
   const genRef = useRef(0);
@@ -1002,6 +1004,7 @@ export function useSpeechOutput() {
   const feed = useCallback(
     (fullText: string) => {
       if (!enabledRef.current) return;
+      if (cueOnlyRef.current) return;
       if (spokenRef.current >= SPEAK_BUDGET) return;
 
       const cleaned = clean(fullText);
@@ -1027,6 +1030,10 @@ export function useSpeechOutput() {
   const endFeed = useCallback(() => {
     // The stream is over, so an empty queue from here on really is the end.
     feedOpenRef.current = false;
+    if (cueOnlyRef.current) {
+      setPending(false);
+      return;
+    }
     if (!enabledRef.current) {
       setPending(false);
       return;
@@ -1049,6 +1056,7 @@ export function useSpeechOutput() {
   /** Start of a new reply. */
   const startFeed = useCallback(() => {
     shutUp();
+    cueOnlyRef.current = false;
     setError(null);
     if (enabledRef.current) {
       // Claim the floor for the whole reply up front. Without this there's a
@@ -1057,6 +1065,12 @@ export function useSpeechOutput() {
       feedOpenRef.current = true;
       setPending(true);
     }
+  }, [shutUp]);
+
+  /** Replace the current streamed reply with short action sounds. */
+  const setCueOnly = useCallback((only: boolean) => {
+    cueOnlyRef.current = only;
+    if (only) shutUp();
   }, [shutUp]);
 
   /** One-shot, for the settings preview. */
@@ -1115,6 +1129,7 @@ export function useSpeechOutput() {
     feed,
     endFeed,
     shutUp,
+    setCueOnly,
     unlock,
     /** Live loudness of the reply, 0..1. Read inside animation loops only. */
     amplitudeRef,

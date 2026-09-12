@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Markdown } from "./Markdown";
 import { isElectron, useSpeechInput, useSpeechOutput } from "./useSpeech";
+import { useSoundCues } from "./useSoundCues";
 import { useMicLevel } from "./useMicLevel";
 import { ReactorOrb, type OrbState } from "./ReactorOrb";
 import { SettingsSheet } from "./SettingsSheet";
@@ -141,6 +142,7 @@ export function ChatView({
 
   const [layout, setLayout] = useState<ChatLayout>(initialLayout);
   const [autoListen, setAutoListen] = useState(initialAutoListen);
+  const [soundCuesEnabled, setSoundCuesEnabled] = useState(false);
 
   /**
    * Whether a hands-free conversation is open.
@@ -169,6 +171,8 @@ export function ChatView({
   const [closing, setClosing] = useState(false);
   const oneShotCandidateRef = useRef(false);
   const machineActionRef = useRef(false);
+  const cueModeRef = useRef(false);
+  const cueResultRef = useRef(false);
   const returnToWakeRef = useRef(false);
 
   const abortRef = useRef<AbortController | null>(null);
@@ -178,6 +182,7 @@ export function ChatView({
   const fileRef = useRef<HTMLInputElement>(null);
 
   const voice = useSpeechOutput();
+  const soundCues = useSoundCues(soundCuesEnabled && voice.enabled);
   const micLevel = useMicLevel();
 
   // "/" anywhere on the page jumps to the composer, the way every chat app does.
@@ -198,19 +203,38 @@ export function ChatView({
       })
       .catch(() => {});
 
+    fetch("/api/settings")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => setSoundCuesEnabled(Boolean(data?.settings?.soundCues)))
+      .catch(() => {});
+
     fetch("/api/suggestions")
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => setChips(data?.chips ?? []))
       .catch(() => {});
   }, []);
 
-  const persistSetting = useCallback((patch: { chatLayout?: ChatLayout; autoListen?: boolean; wakeWordEnabled?: boolean }) => {
+  const persistSetting = useCallback((patch: { chatLayout?: ChatLayout; autoListen?: boolean; wakeWordEnabled?: boolean; soundCues?: boolean }) => {
     fetch("/api/settings", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
     }).catch(() => {});
   }, []);
+
+  // Give the page a small arrival signature. If the browser blocks autoplay,
+  // the cue stays queued until the first tap or keypress unlocks audio.
+  const startupCuePlayedRef = useRef(false);
+  useEffect(() => {
+    if (!soundCuesEnabled || !voice.enabled) {
+      startupCuePlayedRef.current = false;
+      return;
+    }
+    if (!startupCuePlayedRef.current) {
+      startupCuePlayedRef.current = true;
+      soundCues.playCue("sessionStart");
+    }
+  }, [soundCuesEnabled, voice.enabled, soundCues]);
 
   const loadConversation = useCallback((id: string) => {
     fetch(`/api/conversations?id=${id}`)
@@ -275,9 +299,12 @@ export function ChatView({
 
       oneShotCandidateRef.current = sessionRef.current === "active" && looksLikeOneShotTask(trimmed);
       machineActionRef.current = false;
+      cueModeRef.current = false;
+      cueResultRef.current = false;
       returnToWakeRef.current = false;
 
       // Inside the tap/Enter — the only moment iOS will prime speech synthesis.
+      soundCues.unlock();
       voice.unlock();
       voice.startFeed();
       let assistantText = "";
@@ -376,6 +403,16 @@ export function ChatView({
                 break;
               case "tool_start":
                 setStatus(TOOL_LABELS[event.name as keyof typeof TOOL_LABELS] ?? "Working");
+                if (
+                  soundCuesEnabled &&
+                  oneShotCandidateRef.current &&
+                  String(event.name).startsWith("computer_") &&
+                  !cueModeRef.current
+                ) {
+                  cueModeRef.current = true;
+                  voice.setCueOnly(true);
+                  soundCues.playCue("acknowledge");
+                }
                 break;
               case "page_saved":
                 patch((m) => ({
@@ -388,6 +425,11 @@ export function ChatView({
                 break;
               case "machine_action":
                 machineActionRef.current = true;
+                const actionOk = String(event.ok) === "true";
+                if (cueModeRef.current && !cueResultRef.current) {
+                  cueResultRef.current = true;
+                  soundCues.playCue(actionOk ? "complete" : "error");
+                }
                 patch((m) => ({
                   ...m,
                   machine: [
@@ -395,7 +437,7 @@ export function ChatView({
                     {
                       capability: String(event.capability),
                       device: String(event.device),
-                      ok: Boolean(event.ok),
+                      ok: actionOk,
                       detail: String(event.detail ?? ""),
                       error: String(event.error ?? ""),
                     },
@@ -410,6 +452,10 @@ export function ChatView({
                 break;
               case "error":
                 setError(event.message);
+                if (cueModeRef.current && !cueResultRef.current) {
+                  cueResultRef.current = true;
+                  soundCues.playCue("error");
+                }
                 break;
             }
           }
@@ -424,9 +470,10 @@ export function ChatView({
         setStatus(null);
         abortRef.current = null;
         voice.endFeed();
+        voice.setCueOnly(false);
       }
     },
-    [busy, conversationId, voice, attachment]
+    [busy, conversationId, voice, attachment, soundCues, soundCuesEnabled]
   );
 
   const mic = useSpeechInput(
@@ -473,9 +520,9 @@ export function ChatView({
   const busyRef = useRef(busy);
   // `pending` covers the whole reply, gaps included — `speaking` alone dips to
   // false between audio chunks, which is precisely when we must not open the mic.
-  const speakingRef = useRef(voice.pending || voice.speaking);
+  const speakingRef = useRef(voice.pending || voice.speaking || soundCues.pending);
   busyRef.current = busy;
-  speakingRef.current = voice.pending || voice.speaking;
+  speakingRef.current = voice.pending || voice.speaking || soundCues.pending;
 
   const endConversation = useCallback(() => {
     setSession("off");
@@ -505,10 +552,10 @@ export function ChatView({
 
   // Settings previews and typed replies must not be transcribed as user speech.
   useEffect(() => {
-    if (busy || voice.pending || voice.speaking || settingsOpen || historyOpen) {
+    if (busy || voice.pending || voice.speaking || soundCues.pending || settingsOpen || historyOpen) {
       micCancelRef.current();
     }
-  }, [busy, voice.pending, voice.speaking, settingsOpen, historyOpen]);
+  }, [busy, voice.pending, voice.speaking, soundCues.pending, settingsOpen, historyOpen]);
 
   const endRef = useRef(endConversation);
   endRef.current = endConversation;
@@ -516,7 +563,7 @@ export function ChatView({
   // Reopen the microphone once the floor is free. Never while a reply is
   // playing — an open mic during playback transcribes JARVIS talking to itself.
   useEffect(() => {
-    if (!armed || mic.error || busy || voice.pending || voice.speaking || mic.listening || settingsOpen || historyOpen) return;
+    if (!armed || mic.error || busy || voice.pending || voice.speaking || soundCues.pending || mic.listening || settingsOpen || historyOpen) return;
 
     // You said goodbye and the reply has now finished playing. Close instead
     // of reopening — this is the whole point of noticing the sign-off.
@@ -541,7 +588,7 @@ export function ChatView({
       }
     }, RESUME_GAP_MS);
     return () => clearTimeout(timer);
-  }, [session, armed, busy, voice.pending, voice.speaking, mic.listening, mic.supported, mic.error, settingsOpen, historyOpen]);
+  }, [session, armed, busy, voice.pending, voice.speaking, soundCues.pending, mic.listening, mic.supported, mic.error, settingsOpen, historyOpen]);
 
   // Close the conversation after a stretch of silence. activityAt changes on
   // every detected utterance, which re-runs this and pushes the deadline back.
@@ -555,14 +602,17 @@ export function ChatView({
   // on there may never be a deliberate tap, so the first interaction of any
   // kind — anywhere on the page — is what primes it.
   useEffect(() => {
-    const prime = () => unlockRef.current();
+    const prime = () => {
+      soundCues.unlock();
+      unlockRef.current();
+    };
     window.addEventListener("pointerdown", prime, { once: true });
     window.addEventListener("keydown", prime, { once: true });
     return () => {
       window.removeEventListener("pointerdown", prime);
       window.removeEventListener("keydown", prime);
     };
-  }, []);
+  }, [soundCues]);
 
   // Open the conversation on arrival when that's the preference.
   useEffect(() => {
@@ -572,6 +622,7 @@ export function ChatView({
   }, [initialAutoListen, initialWakeWordEnabled, setSession]);
 
   const toggleConversation = useCallback(() => {
+    soundCues.unlock();
     voice.unlock();
     if (sessionRef.current !== "off") {
       endConversation();
@@ -582,7 +633,7 @@ export function ChatView({
     void micLevel.start(); // desktop only; no-ops on mobile
     micCancelRef.current(); // Clear an earlier microphone error before retrying.
     setSession("active");
-  }, [voice, micLevel, endConversation, setSession]);
+  }, [voice, soundCues, micLevel, endConversation, setSession]);
 
   // The minimized Electron orb sends wake phrases back into the live page.
   // Restoring the page and starting the session here keeps the normal chat,
@@ -592,6 +643,7 @@ export function ChatView({
       const text = String((event as CustomEvent<{ text?: string }>).detail?.text ?? "").trim();
       if (!text) return;
       const request = text.replace(/^\s*(?:(?:hey|okay|ok)\s+)?jarvis\b[\s,:-]*/i, "").trim();
+      soundCues.unlock();
       unlockRef.current();
       closingRef.current = false;
       setClosing(false);
@@ -605,7 +657,7 @@ export function ChatView({
       window.removeEventListener("jarvis-desktop-wake", onDesktopWake);
       window.removeEventListener("jarvis-desktop-suspend", onDesktopSuspend);
     };
-  }, [send, setSession]);
+  }, [send, setSession, soundCues]);
 
   // Escape ends the conversation.
   useEffect(() => {
@@ -640,7 +692,7 @@ export function ChatView({
     ? "listening"
     : busy
       ? "thinking"
-      : voice.speaking
+      : voice.speaking || soundCues.pending
         ? "speaking"
         : "idle";
 
@@ -652,7 +704,7 @@ export function ChatView({
       ? (status ?? "Thinking")
       : closing
         ? "Signing off"
-        : voice.speaking
+        : voice.speaking || soundCues.pending
           ? "Speaking"
           : live
             ? "Go ahead"
@@ -1147,6 +1199,11 @@ export function ChatView({
           setWakeWordEnabled(next);
           if (!next && sessionRef.current === "waiting") endConversation();
           persistSetting({ wakeWordEnabled: next });
+        }}
+        soundCues={soundCuesEnabled}
+        onSoundCuesChange={(next) => {
+          setSoundCuesEnabled(next);
+          persistSetting({ soundCues: next });
         }}
       />
     </div>

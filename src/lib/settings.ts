@@ -44,6 +44,8 @@ export interface Settings {
    * on to hold everything to one rule.
    */
   speakNeedsUnlock?: boolean;
+  /** Play short JARVIS sound cues for one-shot computer actions. */
+  soundCues?: boolean;
 
   // ---- proactive notifications ----
   pushEnabled?: boolean;
@@ -83,6 +85,7 @@ export async function getSettings(userId: string): Promise<Settings> {
         ? data.speechSource
         : undefined,
     speakNeedsUnlock: typeof data.speakNeedsUnlock === "boolean" ? data.speakNeedsUnlock : undefined,
+    soundCues: typeof data.soundCues === "boolean" ? data.soundCues : undefined,
     pushEnabled: typeof data.pushEnabled === "boolean" ? data.pushEnabled : undefined,
     briefHour: typeof data.briefHour === "number" ? data.briefHour : undefined,
     quietFrom: typeof data.quietFrom === "number" ? data.quietFrom : undefined,

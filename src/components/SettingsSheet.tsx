@@ -55,6 +55,8 @@ export function SettingsSheet({
   onAutoListenChange,
   wakeWordEnabled,
   onWakeWordEnabledChange,
+  soundCues,
+  onSoundCuesChange,
 }: {
   open: boolean;
   onClose: () => void;
@@ -67,6 +69,8 @@ export function SettingsSheet({
   onAutoListenChange: (on: boolean) => void;
   wakeWordEnabled: boolean;
   onWakeWordEnabledChange: (on: boolean) => void;
+  soundCues: boolean;
+  onSoundCuesChange: (on: boolean) => void;
 }) {
   const [voices, setVoices] = useState<Voice[]>([]);
   const [voiceId, setVoiceId] = useState<string>("");
@@ -333,6 +337,20 @@ export function SettingsSheet({
               Waiting keeps the microphone on while this page is open. Tap the mic or press Escape to turn it off.
               Your browser may use an online speech recognition service.
             </p>
+            <button
+              onClick={() => onSoundCuesChange(!soundCues)}
+              role="switch"
+              aria-checked={soundCues}
+              className="mt-2 flex w-full items-center justify-between gap-3 rounded-lg border border-edge px-3 py-2.5 text-left transition-colors hover:border-arc/40"
+            >
+              <span>
+                <span className="block text-[0.8rem]">JARVIS sound cues</span>
+                <span className="mt-0.5 block text-[0.65rem] leading-snug text-mist">
+                  Use cinematic “working” and “done” sounds for quick computer actions. Conversations still use the full voice.
+                </span>
+              </span>
+              <span className={soundCues ? "text-arc" : "text-mist"}>{soundCues ? "On" : "Off"}</span>
+            </button>
             <div className="mt-2 flex gap-1.5">
               {(["natural", "device"] as VoiceMode[]).map((m) => (
                 <button

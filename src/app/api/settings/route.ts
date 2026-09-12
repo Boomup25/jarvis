@@ -49,6 +49,7 @@ export async function PATCH(req: Request) {
     patch.speechSource = body.speechSource;
   }
   if (typeof body.speakNeedsUnlock === "boolean") patch.speakNeedsUnlock = body.speakNeedsUnlock;
+  if (typeof body.soundCues === "boolean") patch.soundCues = body.soundCues;
 
   if (typeof body.pushEnabled === "boolean") patch.pushEnabled = body.pushEnabled;
   if (typeof body.briefHour === "number") patch.briefHour = Math.min(23, Math.max(0, body.briefHour));
