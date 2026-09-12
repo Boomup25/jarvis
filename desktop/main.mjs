@@ -373,6 +373,11 @@ function createWindow() {
     webPreferences: { preload: join(__dirname, "preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   windowRef.loadFile(join(__dirname, "renderer", "index.html"));
+  // Keep the bridge console available from the taskbar while the orb takes
+  // over the desktop corner as the hands-free entry point.
+  windowRef.on("minimize", () => showOrbWindow());
+  windowRef.on("show", hideOrbWindow);
+  windowRef.on("restore", hideOrbWindow);
   windowRef.on("closed", () => { windowRef = null; });
 }
 
