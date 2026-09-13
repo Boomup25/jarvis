@@ -99,8 +99,22 @@ const IDLE_END_MS = 30_000;
  */
 const RESUME_GAP_MS = 400;
 
-/** Action requests close the active voice turn after JARVIS completes them. */
+/**
+ * Computer requests that are likely to be a single utility action. Opening an
+ * app is intentionally excluded: people commonly say “open Discord” and then
+ * immediately ask the next question. The conversation stays active until
+ * they say a farewell or stop listening.
+ */
 function looksLikeOneShotTask(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed || /\b(?:and then|after that|while|once|also|next|another question|keep listening|stay with me|don't stop)\b/i.test(trimmed)) {
+    return false;
+  }
+  return /^(?:(?:please|can you|could you|would you)\s+)*(?:close|quit|list|read|write|search|find|show|check|look up|turn on|turn off|add|remove|run)\b/i.test(trimmed);
+}
+
+/** Any simple computer request can use the short local sound cues. */
+function looksLikeComputerTask(text: string): boolean {
   return /^(?:(?:please|can you|could you|would you)\s+)*(?:open|launch|start|close|quit|list|read|write|search|find|show|check|look up|turn on|turn off|add|remove|run)\b/i.test(text.trim());
 }
 
@@ -302,7 +316,7 @@ export function ChatView({
       }
 
       oneShotCandidateRef.current = sessionRef.current === "active" && looksLikeOneShotTask(trimmed);
-      cueCandidateRef.current = looksLikeOneShotTask(trimmed);
+      cueCandidateRef.current = looksLikeComputerTask(trimmed);
       machineActionRef.current = false;
       cueModeRef.current = false;
       cueResultRef.current = false;
