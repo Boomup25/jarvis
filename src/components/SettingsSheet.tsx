@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { CheckIcon, SearchIcon, MicIcon, SparkIcon } from "./Icons";
+import { CheckIcon, SearchIcon } from "./Icons";
 import { NotificationSettings } from "./NotificationSettings";
 import { BridgePanel } from "./BridgePanel";
 import { DEFAULT_SILENCE_MS, readSilenceMs, writeSilenceMs, type VoiceMode } from "./useSpeech";
@@ -43,6 +43,17 @@ interface Voice {
   group: string;
 }
 
+type SettingsSection = "page" | "voice" | "models" | "notifications" | "bridge" | "account";
+
+const SETTINGS_SECTIONS: { id: SettingsSection; label: string; note: string }[] = [
+  { id: "page", label: "Experience", note: "Layout and startup" },
+  { id: "voice", label: "Voice", note: "Speech and listening" },
+  { id: "models", label: "AI models", note: "Choose your engine" },
+  { id: "notifications", label: "Notifications", note: "Briefs and alerts" },
+  { id: "bridge", label: "Computer access", note: "Bridge permissions" },
+  { id: "account", label: "Account", note: "Password and security" },
+];
+
 export function SettingsSheet({
   open,
   onClose,
@@ -80,7 +91,7 @@ export function SettingsSheet({
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
   const [saving, setSaving] = useState<string | null>(null);
-  const [modelsOpen, setModelsOpen] = useState(false);
+  const [activeSection, setActiveSection] = useState<SettingsSection>("page");
   const [silence, setSilence] = useState(DEFAULT_SILENCE_MS);
   const [dragOffset, setDragOffset] = useState(0);
   const [dragging, setDragging] = useState(false);
@@ -100,8 +111,7 @@ export function SettingsSheet({
   }, [open, voices.length]);
 
   useEffect(() => {
-    if (!open) return;
-    setSilence(readSilenceMs());
+    if (!open || activeSection !== "models") return;
     if (data) return;
     setLoading(true);
     fetch("/api/models")
@@ -109,7 +119,11 @@ export function SettingsSheet({
       .then((json) => setData(json))
       .catch(() => setData(null))
       .finally(() => setLoading(false));
-  }, [open, data]);
+  }, [open, data, activeSection]);
+
+  useEffect(() => {
+    if (open) setSilence(readSilenceMs());
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -223,17 +237,14 @@ export function SettingsSheet({
         className="absolute inset-0 bg-void/70 backdrop-blur-sm"
       />
 
-      {/* One scroll container for the whole sheet. It used to have a shrink-0
-          header that new sections kept getting added to, which made them
-          unreachable — nothing to scroll them into view. */}
       <div
-        className="relative flex max-h-[88dvh] w-full flex-col overflow-y-auto overscroll-contain border-t border-edge glass safe-bottom lg:max-w-3xl lg:rounded-xl lg:border"
+        className="relative flex h-[min(780px,92dvh)] w-full flex-col overflow-hidden border-t border-edge glass safe-bottom lg:max-w-5xl lg:rounded-2xl lg:border"
         style={{
           transform: `translateY(${dragOffset}px)`,
           transition: dragging ? "none" : "transform 180ms ease-out",
         }}
       >
-        <div className="border-b border-edge px-4 pb-3 pt-3">
+        <header className="relative flex shrink-0 items-center gap-4 border-b border-edge px-5 pb-4 pt-6 lg:px-6 lg:pt-4">
           <div
             role="button"
             tabIndex={0}
@@ -245,225 +256,126 @@ export function SettingsSheet({
             onKeyDown={(event) => {
               if (event.key === "Escape" || event.key === "Enter" || event.key === " ") onClose();
             }}
-            className="mx-auto mb-3 flex h-5 w-12 cursor-grab touch-none items-center justify-center active:cursor-grabbing"
+            className="absolute inset-x-0 top-1 flex h-4 cursor-grab touch-none items-center justify-center active:cursor-grabbing lg:hidden"
           >
             <span className="h-1 w-9 rounded-full bg-edge" />
           </div>
-
-          <div className="mb-3">
-            <NotificationSettings />
+          <div className="min-w-0 flex-1">
+            <p className="readout text-arc">SYSTEM SETTINGS</p>
+            <h2 className="mt-1 text-xl font-medium tracking-tight text-frost">Control room</h2>
+            <p className="mt-0.5 text-[0.72rem] text-mist">Tune how JARVIS looks, listens, thinks, and connects.</p>
           </div>
+          <button onClick={onClose} className="rounded-lg border border-edge px-3 py-2 text-[0.72rem] text-mist transition-colors hover:border-arc/40 hover:text-frost">
+            Done
+          </button>
+        </header>
 
-          <PasswordSection />
-
-          {/* Owner-only and behind its own passphrase; the component renders
-              nothing at all for an account that can't reach the bridge. */}
-          <BridgePanel />
-
-          <section className="mb-3">
-            <div className="flex items-center gap-2 text-[0.7rem] uppercase tracking-[0.18em] text-mist">
-              <SparkIcon className="size-3.5" />
-              The JARVIS page
-            </div>
-
-            <div className="mt-2 flex gap-1.5">
-              {(
-                [
-                  ["presence", "Presence", "Reactor centre stage, live captions"],
-                  ["transcript", "Transcript", "Reactor above a scrolling history"],
-                ] as [ChatLayout, string, string][]
-              ).map(([value, label, note]) => (
-                <button
-                  key={value}
-                  onClick={() => onLayoutChange(value)}
-                  className={`flex-1 rounded-lg border px-2 py-2 text-left transition-colors ${
-                    layout === value ? "border-arc/50 bg-arc/10 text-arc" : "border-edge text-mist"
-                  }`}
-                >
-                  <span className="block text-[0.75rem]">{label}</span>
-                  <span className="mt-0.5 block text-[0.62rem] leading-snug opacity-70">{note}</span>
-                </button>
-              ))}
-            </div>
-
-            <button
-              onClick={() => onAutoListenChange(!autoListen)}
-              role="switch"
-              aria-checked={autoListen}
-              className="mt-2 flex w-full items-center gap-3 rounded-lg border border-edge px-3 py-2.5 text-left transition-colors hover:border-arc/40"
-            >
-              <span className="min-w-0 flex-1">
-                <span className="block text-[0.8rem]">Listen as soon as I open it</span>
-                <span className="mt-0.5 block text-[0.65rem] leading-snug text-mist">
-                  {autoListen
-                    ? wakeWordEnabled ? 'Waits for “Hey Jarvis” when the page opens.' : "The reactor starts listening on load."
-                    : "Tap the reactor to start a conversation."}
-                </span>
-              </span>
-              <span
-                className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
-                  autoListen ? "bg-arc" : "bg-edge"
-                }`}
-              >
-                <span
-                  className={`absolute top-0.5 size-4 rounded-full bg-void transition-all ${
-                    autoListen ? "left-[1.125rem]" : "left-0.5"
-                  }`}
-                />
-              </span>
-            </button>
-          </section>
-
-          <section className="mb-3">
-            <div className="flex items-center gap-2 text-[0.7rem] uppercase tracking-[0.18em] text-mist">
-              <MicIcon className="size-3.5" />
-              Voice
-            </div>
-            <button
-              onClick={() => onWakeWordEnabledChange(!wakeWordEnabled)}
-              role="switch"
-              aria-checked={wakeWordEnabled}
-              className="mt-2 flex w-full items-center justify-between gap-3 rounded-lg border border-edge px-3 py-2.5 text-left hover:border-arc/40"
-            >
-              <span>
-                <span className="block text-[0.8rem]">Wait for “Hey Jarvis” between conversations</span>
-                <span className="mt-0.5 block text-[0.65rem] leading-snug text-mist">
-                  Say goodbye or leave 30 seconds of quiet to finish. Follow-up questions need no wake phrase.
-                </span>
-              </span>
-              <span className={wakeWordEnabled ? "text-arc" : "text-mist"}>{wakeWordEnabled ? "On" : "Off"}</span>
-            </button>
-            <p className="mt-1.5 text-[0.65rem] leading-snug text-mist">
-              Waiting keeps the microphone on while this page is open. Tap the mic or press Escape to turn it off.
-              Your browser may use an online speech recognition service.
-            </p>
-            <button
-              onClick={() => onSoundCuesChange(!soundCues)}
-              role="switch"
-              aria-checked={soundCues}
-              className="mt-2 flex w-full items-center justify-between gap-3 rounded-lg border border-edge px-3 py-2.5 text-left transition-colors hover:border-arc/40"
-            >
-              <span>
-                <span className="block text-[0.8rem]">JARVIS sound cues</span>
-                <span className="mt-0.5 block text-[0.65rem] leading-snug text-mist">
-                  Use cinematic “working” and “done” sounds for quick computer actions. Conversations still use the full voice.
-                </span>
-              </span>
-              <span className={soundCues ? "text-arc" : "text-mist"}>{soundCues ? "On" : "Off"}</span>
-            </button>
-            <div className="mt-2 flex gap-1.5">
-              {(["natural", "device"] as VoiceMode[]).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => onVoiceModeChange(m)}
-                  className={`flex-1 rounded-lg border px-2 py-2 text-[0.72rem] transition-colors ${
-                    voiceMode === m ? "border-arc/50 bg-arc/10 text-arc" : "border-edge text-mist"
-                  }`}
-                >
-                  {m === "natural" ? "Natural voice" : "Device voice"}
-                </button>
-              ))}
-            </div>
-
-            {voiceMode === "natural" && <SpeechSource />}
-
-            {voiceMode === "natural" && (
-              <div className="mt-2.5 space-y-2">
-                <label className="block">
-                  <span className="text-[0.7rem] text-mist">Voice</span>
-                  <select
-                    value={voiceId}
-                    onChange={(e) => {
-                      setVoiceId(e.target.value);
-                      void saveVoice({ voiceId: e.target.value });
-                    }}
-                    className="mt-1 w-full rounded-lg border border-edge bg-abyss/70 px-2.5 py-2 text-[0.8rem] focus:border-arc/50 focus:outline-none"
+        <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+          <nav className="shrink-0 overflow-x-auto border-b border-edge bg-abyss/30 p-2 lg:w-56 lg:overflow-y-auto lg:border-b-0 lg:border-r lg:p-3">
+            <div className="flex gap-1 lg:block lg:space-y-1">
+              {SETTINGS_SECTIONS.map((section) => {
+                const selected = activeSection === section.id;
+                return (
+                  <button
+                    key={section.id}
+                    onClick={() => setActiveSection(section.id)}
+                    aria-current={selected ? "page" : undefined}
+                    className={`min-w-[132px] rounded-lg border px-3 py-2 text-left transition-colors lg:w-full ${
+                      selected ? "border-arc/40 bg-arc/10 text-frost" : "border-transparent text-mist hover:border-edge hover:text-frost"
+                    }`}
                   >
-                    {["Recommended", "British", "Free", "American"].map((group) => {
-                      const inGroup = voices.filter((v) => v.group === group);
-                      if (!inGroup.length) return null;
-                      return (
-                        <optgroup key={group} label={group}>
-                          {inGroup.map((v) => (
-                            <option key={v.id} value={v.id}>
-                              {v.label}
-                            </option>
-                          ))}
-                        </optgroup>
-                      );
-                    })}
-                  </select>
-                  <span className="mt-1 block text-[0.65rem] leading-snug text-mist">
-                    {voices.find((v) => v.id === voiceId)?.note ??
-                      "British voices carry the character best."}
-                  </span>
-                </label>
+                    <span className="block text-[0.76rem]">{section.label}</span>
+                    <span className="mt-0.5 block whitespace-nowrap text-[0.62rem] text-mist">{section.note}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </nav>
 
-                <button
-                  onClick={preview}
-                  disabled={previewing || savingVoice}
-                  className="w-full rounded-lg border border-edge py-2 text-[0.75rem] text-mist transition-colors hover:text-frost disabled:opacity-50"
-                >
-                  {previewing ? "Speaking…" : "Preview"}
-                </button>
-              </div>
+          <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6">
+            {activeSection === "page" && (
+              <SettingsCard eyebrow="Experience" title="The JARVIS page" description="Set the stage and decide how JARVIS greets you.">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {([
+                    ["presence", "Presence", "Reactor centre stage, live captions"],
+                    ["transcript", "Transcript", "Reactor above a scrolling history"],
+                  ] as [ChatLayout, string, string][]).map(([value, label, note]) => (
+                    <button key={value} onClick={() => onLayoutChange(value)} className={`rounded-xl border px-3 py-3 text-left transition-colors ${layout === value ? "border-arc/50 bg-arc/10 text-arc" : "border-edge text-mist hover:border-arc/40"}`}>
+                      <span className="block text-[0.8rem]">{label}</span>
+                      <span className="mt-1 block text-[0.68rem] leading-snug opacity-70">{note}</span>
+                    </button>
+                  ))}
+                </div>
+                <ToggleRow
+                  label="Listen as soon as I open it"
+                  note={autoListen ? wakeWordEnabled ? 'Waits for “Hey Jarvis” when the page opens.' : "The reactor starts listening on load." : "Tap the reactor to start a conversation."}
+                  on={autoListen}
+                  onToggle={() => onAutoListenChange(!autoListen)}
+                />
+              </SettingsCard>
             )}
 
-            <label className="mt-3 block">
-              <div className="flex items-baseline justify-between">
-                <span className="text-[0.8rem]">Pause before sending</span>
-                <span className="font-mono text-[0.78rem] text-arc">{(silence / 1000).toFixed(1)}s</span>
-              </div>
-              <input
-                type="range"
-                min={1000}
-                max={6000}
-                step={250}
-                value={silence}
-                onChange={(e) => updateSilence(Number(e.target.value))}
-                className="mt-1.5 w-full accent-[var(--color-arc)]"
-              />
-              <p className="mt-1 text-[0.68rem] leading-snug text-mist">
-                How long you can go quiet mid-sentence before it decides you&apos;re done.
-                Raise it if it keeps cutting you off.
-              </p>
-            </label>
-          </section>
+            {activeSection === "voice" && (
+              <SettingsCard eyebrow="Speech" title="Voice and listening" description="Choose how JARVIS speaks and when the microphone hands back control.">
+                <ToggleRow label="Wait for “Hey Jarvis” between conversations" note="After a reply, the mic stays ready but waits for the wake phrase." on={wakeWordEnabled} onToggle={() => onWakeWordEnabledChange(!wakeWordEnabled)} />
+                <ToggleRow label="JARVIS sound cues" note="Quick actions use cinematic working, completion, and error sounds. Longer conversations keep full speech." on={soundCues} onToggle={() => onSoundCuesChange(!soundCues)} />
+                <div className="mt-4">
+                  <p className="readout mb-2">VOICE ENGINE</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(["natural", "device"] as VoiceMode[]).map((m) => (
+                      <button key={m} onClick={() => onVoiceModeChange(m)} className={`rounded-xl border px-3 py-2.5 text-left text-[0.76rem] transition-colors ${voiceMode === m ? "border-arc/50 bg-arc/10 text-arc" : "border-edge text-mist hover:border-arc/40"}`}>
+                        <span className="block">{m === "natural" ? "Natural voice" : "Device voice"}</span>
+                        <span className="mt-0.5 block text-[0.64rem] opacity-70">{m === "natural" ? "JARVIS voice service" : "Built into this device"}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-          <button
-            type="button"
-            onClick={() => setModelsOpen((open) => !open)}
-            aria-expanded={modelsOpen}
-            className="flex w-full items-center justify-between gap-3 text-left"
-          >
-            <span className="flex items-center gap-2 text-[0.7rem] uppercase tracking-[0.18em] text-mist">
-              AI models
-            </span>
-            <span className="flex min-w-0 items-center gap-2 text-[0.7rem] text-mist">
-              <span className="truncate">{data?.current ? data.current.split("/").pop() : "Automatic"}</span>
-              <span className="text-arc">{modelsOpen ? "−" : "+"}</span>
-            </span>
-          </button>
+                {voiceMode === "natural" && <SpeechSource />}
 
-          {!modelsOpen && (
-            <p className="mt-1 text-[0.65rem] text-mist">
-              Choose the model JARVIS uses for replies.
-            </p>
-          )}
+                {voiceMode === "natural" && (
+                  <div className="mt-4 rounded-xl border border-edge bg-abyss/25 p-3">
+                    <label className="block">
+                      <span className="readout">VOICE PROFILE</span>
+                      <select value={voiceId} onChange={(e) => { setVoiceId(e.target.value); void saveVoice({ voiceId: e.target.value }); }} className="mt-2 w-full rounded-lg border border-edge bg-abyss/70 px-2.5 py-2 text-[0.8rem] focus:border-arc/50 focus:outline-none">
+                        {["Recommended", "British", "Free", "American"].map((group) => {
+                          const inGroup = voices.filter((v) => v.group === group);
+                          if (!inGroup.length) return null;
+                          return <optgroup key={group} label={group}>{inGroup.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}</optgroup>;
+                        })}
+                      </select>
+                      <span className="mt-1.5 block text-[0.66rem] leading-snug text-mist">{voices.find((v) => v.id === voiceId)?.note ?? "British voices carry the character best."}</span>
+                    </label>
+                    <button onClick={preview} disabled={previewing || savingVoice} className="mt-3 w-full rounded-lg border border-edge py-2 text-[0.75rem] text-mist transition-colors hover:text-frost disabled:opacity-50">{previewing ? "Speaking…" : "Preview voice"}</button>
+                  </div>
+                )}
 
-        {modelsOpen && <>
-          <div className="relative mt-2 px-4">
-            <SearchIcon className="pointer-events-none absolute left-7 top-1/2 size-4 -translate-y-1/2 text-mist" />
-            <input
+                <label className="mt-4 block rounded-xl border border-edge bg-abyss/25 p-3">
+                  <div className="flex items-baseline justify-between"><span className="text-[0.8rem]">Pause before sending</span><span className="font-mono text-[0.78rem] text-arc">{(silence / 1000).toFixed(1)}s</span></div>
+                  <input type="range" min={1000} max={6000} step={250} value={silence} onChange={(e) => updateSilence(Number(e.target.value))} className="mt-2 w-full accent-[var(--color-arc)]" />
+                  <p className="mt-1 text-[0.66rem] leading-snug text-mist">Raise this if JARVIS cuts you off while you are still speaking.</p>
+                </label>
+              </SettingsCard>
+            )}
+
+            {activeSection === "models" && (
+              <SettingsCard eyebrow="Reasoning" title="AI model" description="Pick the model behind JARVIS replies. Automatic tries free models in order.">
+                <div className="mb-4 flex items-center justify-between rounded-xl border border-arc/25 bg-arc/[0.06] px-3 py-2.5">
+                  <span className="text-[0.72rem] text-mist">Current model</span>
+                  <span className="max-w-[60%] truncate text-[0.76rem] text-arc">{data?.current ? data.current.split("/").pop() : "Automatic"}</span>
+                </div>
+                <div className="relative">
+                  <SearchIcon className="pointer-events-none absolute left-7 top-1/2 size-4 -translate-y-1/2 text-mist" />
+                  <input
               ref={searchRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={data ? `Search ${data.count} models…` : "Search models…"}
-              className="w-full rounded-xl border border-edge bg-abyss/70 py-2.5 pl-9 pr-3 text-[0.85rem] placeholder:text-mist/60 focus:border-arc/50 focus:outline-none"
-            />
-          </div>
+                  className="w-full rounded-xl border border-edge bg-abyss/70 py-2.5 pl-9 pr-3 text-[0.85rem] placeholder:text-mist/60 focus:border-arc/50 focus:outline-none"
+                  />
+                </div>
 
-        <div className="px-4 py-3">
+                <div className="pt-4">
           {loading && <p className="py-8 text-center text-[0.8rem] text-mist">Loading catalogue…</p>}
 
           {data?.error && (
@@ -513,11 +425,69 @@ export function SettingsSheet({
           {data && groups.length === 0 && query && (
             <p className="py-8 text-center text-[0.8rem] text-mist">No model matches “{query}”.</p>
           )}
+                </div>
+              </SettingsCard>
+            )}
+
+            {activeSection === "notifications" && <NotificationSettings />}
+            {activeSection === "bridge" && <BridgePanel />}
+            {activeSection === "account" && <PasswordSection />}
+          </main>
         </div>
-        </>}
       </div>
     </div>
-    </div>
+  );
+}
+
+function SettingsCard({
+  eyebrow,
+  title,
+  description,
+  children,
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="mx-auto max-w-2xl">
+      <div className="mb-5">
+        <p className="readout text-arc">{eyebrow}</p>
+        <h3 className="mt-1.5 text-2xl font-medium tracking-tight text-frost">{title}</h3>
+        <p className="mt-1 text-[0.78rem] leading-relaxed text-mist">{description}</p>
+      </div>
+      <div className="space-y-3">{children}</div>
+    </section>
+  );
+}
+
+function ToggleRow({
+  label,
+  note,
+  on,
+  onToggle,
+}: {
+  label: string;
+  note: string;
+  on: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      onClick={onToggle}
+      role="switch"
+      aria-checked={on}
+      className="flex w-full items-center gap-4 rounded-xl border border-edge bg-abyss/25 px-3.5 py-3 text-left transition-colors hover:border-arc/40"
+    >
+      <span className="min-w-0 flex-1">
+        <span className="block text-[0.82rem] text-frost">{label}</span>
+        <span className="mt-1 block text-[0.68rem] leading-snug text-mist">{note}</span>
+      </span>
+      <span className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${on ? "bg-arc" : "bg-edge"}`}>
+        <span className={`absolute top-0.5 size-4 rounded-full bg-void transition-all ${on ? "left-[1.125rem]" : "left-0.5"}`} />
+      </span>
+    </button>
   );
 }
 
