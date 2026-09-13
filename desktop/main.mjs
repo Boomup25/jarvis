@@ -1,10 +1,11 @@
 import { app, BrowserWindow, ipcMain, Menu, nativeImage, safeStorage, screen, shell } from "electron";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..");
@@ -12,6 +13,7 @@ const bundledAgent = app.isPackaged ? join(process.resourcesPath, "agent") : joi
 const bridgePath = join(bundledAgent, "bin", "jarvis-bridge.mjs");
 const configModulePath = join(bundledAgent, "src", "config.mjs");
 const configModuleUrl = pathToFileURL(configModulePath).href;
+const execFileAsync = promisify(execFile);
 
 let windowRef;
 let jarvisWindow = null;
@@ -159,20 +161,54 @@ async function setVoiceServerEnabled(enabled) {
     const result = await startVoiceServer(config);
     return { ...result, settings: await getVoiceServerSettings() };
   }
-  stopVoiceServer();
+  await stopVoiceServer(config);
   return { ok: true, settings: await getVoiceServerSettings() };
 }
 
-function stopVoiceServer() {
-  if (!voiceServerProcess) return { ok: true };
-  voiceServerProcess.kill();
-  voiceServerProcess = null;
-  return { ok: true };
+async function externalVoiceServerPid(port) {
+  if (process.platform !== "win32") return null;
+  try {
+    const { stdout } = await execFileAsync("netstat", ["-ano", "-p", "tcp"], { windowsHide: true, maxBuffer: 1 << 20 });
+    const wanted = `:${Number(port) || 5111}`;
+    for (const line of String(stdout).split(/\r?\n/)) {
+      const columns = line.trim().split(/\s+/);
+      if (columns[0] === "TCP" && columns[1]?.endsWith(wanted) && columns[3] === "LISTENING") {
+        const pid = Number(columns[4]);
+        if (Number.isInteger(pid) && pid > 0) return pid;
+      }
+    }
+  } catch {
+    /* netstat is unavailable or the process exited between checks */
+  }
+  return null;
+}
+
+async function stopVoiceServer(config = null) {
+  if (voiceServerProcess) {
+    voiceServerProcess.kill();
+    voiceServerProcess = null;
+    return { ok: true, owned: true };
+  }
+
+  // LuxTTS is often started manually from PowerShell. In that case the
+  // desktop app knows the port is healthy but has no child-process handle, so
+  // the old "voice stop" command appeared to work while the GPU server stayed
+  // resident. Stop only the process listening on our configured loopback port.
+  const settings = voiceServerSettings(config);
+  if (!(await voiceServerHealthy(settings.port))) return { ok: true, owned: false };
+  const pid = await externalVoiceServerPid(settings.port);
+  if (!pid || pid === process.pid) return { ok: true, owned: false };
+  try {
+    await execFileAsync("taskkill", ["/PID", String(pid), "/T", "/F"], { windowsHide: true });
+    return { ok: true, owned: false, external: true, pid };
+  } catch (error) {
+    return { ok: false, error: `Could not stop the voice server (PID ${pid}): ${error?.message ?? error}` };
+  }
 }
 
 async function restartVoiceServer(config) {
-  const wasRunning = Boolean(voiceServerProcess);
-  stopVoiceServer();
+  const wasRunning = Boolean(voiceServerProcess) || await voiceServerHealthy(voiceServerSettings(config).port);
+  await stopVoiceServer(config);
   if (wasRunning) await new Promise((done) => setTimeout(done, 350));
   return startVoiceServer(config);
 }
@@ -218,7 +254,7 @@ async function setVoiceMode(mode) {
   savePreferences();
 
   if (nextMode === "light") {
-    stopVoiceServer();
+    await stopVoiceServer(config);
   }
   const reconnected = await restartBridgeAfterVoiceChange();
   if (nextMode === "quality") {
@@ -441,7 +477,15 @@ async function runCommand(line) {
           : result.error,
       };
     }
-    if (action === "stop") { stopVoiceServer(); return { ok: true, output: "Voice server stopped." }; }
+    if (action === "stop") {
+      const result = await stopVoiceServer(config);
+      return {
+        ok: result.ok,
+        output: result.ok
+          ? result.external ? `Voice server stopped (external process ${result.pid}).` : "Voice server stopped."
+          : result.error,
+      };
+    }
     if (action === "status") {
       const settings = voiceServerSettings(config);
       const healthy = voiceServerProcess ? true : await voiceServerHealthy(settings.port);
@@ -848,7 +892,7 @@ app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(
 app.on("before-quit", () => {
   app.isQuitting = true;
   if (orbWindow && !orbWindow.isDestroyed()) orbWindow.destroy();
-  stopVoiceServer();
+  void stopVoiceServer();
   if (bridgeProcess) {
     bridgeProcess.kill();
     bridgeProcess = null;
