@@ -339,6 +339,16 @@ function stopBridge() {
   setState("stopping");
   return { ok: true };
 }
+
+async function waitForBridge(timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (bridgeState === "connected") return true;
+    if (!bridgeProcess) return false;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return bridgeState === "connected";
+}
 function parseArgs(line) {
   const args = [];
   const pattern = /"((?:\\.|[^"\\])*)"|'([^']*)'|(\S+)/g;
@@ -380,6 +390,17 @@ function runOneShot(args) {
 async function unlockPassphrase() {
   if (!preferences.passphrase) return "";
   try { return safeStorage.decryptString(Buffer.from(preferences.passphrase, "base64")); } catch { return ""; }
+}
+
+async function pairedDeviceToken(config) {
+  const passphrase = await unlockPassphrase();
+  if (!passphrase || !config?.sealed) return "";
+  try {
+    const { openToken } = await import(configModuleUrl);
+    return openToken(config.sealed, passphrase) ?? "";
+  } catch {
+    return "";
+  }
 }
 async function runCommand(line) {
   const args = parseArgs(String(line ?? "").trim());
@@ -516,6 +537,15 @@ async function openJarvisWindow() {
   const url = String(config?.serverUrl ?? "").trim();
   if (!url) return { ok: false, error: "Pair this computer first so JARVIS knows which server to open." };
 
+  // Opening JARVIS from the desktop shell is itself a request to be online.
+  // Recover the saved credential and start the bridge before the page loads so
+  // its first chat turn can see the computer immediately.
+  if (config?.sealed && !bridgeProcess) {
+    const passphrase = await unlockPassphrase();
+    if (passphrase) startBridge(passphrase);
+  }
+  if (config?.sealed && bridgeProcess) await waitForBridge();
+
   void startVoiceServer(config).then((result) => {
     if (!result.ok) send("bridge-log", `\nVoice server was not started: ${result.error}\n`);
   });
@@ -545,6 +575,15 @@ async function openJarvisWindow() {
   });
   const jarvisSession = jarvisWindow.webContents.session;
   allowMicrophone(jarvisSession);
+  const deviceToken = await pairedDeviceToken(config);
+  if (deviceToken) {
+    const origin = new URL(url).origin;
+    jarvisSession.webRequest.onBeforeSendHeaders({ urls: [`${origin}/*`] }, (details, callback) => {
+      details.requestHeaders.Authorization = `Bearer ${deviceToken}`;
+      details.requestHeaders["X-Jarvis-Desktop"] = "1";
+      callback({ requestHeaders: details.requestHeaders });
+    });
+  }
   jarvisWindow.on("minimize", (event) => {
     event.preventDefault();
     // Stop the page recorder before handing the microphone to the orb.

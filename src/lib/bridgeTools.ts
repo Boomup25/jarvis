@@ -34,13 +34,15 @@ export interface BridgeContext {
  * model choosing a device id is a decision it has no business making, and it
  * would be one more thing an injected instruction could steer.
  */
-export async function bridgeContextFor(userId: string): Promise<BridgeContext | null> {
+export async function bridgeContextFor(userId: string, preferredDeviceId?: string): Promise<BridgeContext | null> {
   const devices = await prisma.device.findMany({
     where: { userId, active: true },
     orderBy: { lastSeenAt: "desc" },
   });
 
-  const live = devices.find((d) => isConnected(d.id));
+  const live =
+    (preferredDeviceId && devices.find((d) => d.id === preferredDeviceId && isConnected(d.id))) ??
+    devices.find((d) => isConnected(d.id));
   if (!live || live.capabilities.length === 0) return null;
 
   return {

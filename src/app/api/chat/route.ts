@@ -23,6 +23,7 @@ import { streamChat, discoverVisionModels, type ChatMessage, type ToolCall } fro
 import { runTool, toolSchemas } from "@/lib/tools";
 import { bridgeContextFor } from "@/lib/bridgeTools";
 import { BRIDGE_COOKIE, readUnlockToken, isOwnerUser } from "@/lib/bridge";
+import { authenticateAgent } from "@/lib/bridgeHub";
 import { extractMemories } from "@/lib/memory";
 import { findSimilarPages, STRONG_MATCH } from "@/lib/pages";
 import { completeJson } from "@/lib/openrouter";
@@ -143,9 +144,15 @@ export async function POST(req: Request) {
         const unlockedFor = await readUnlockToken(
           (await cookies()).get(BRIDGE_COOKIE)?.value
         );
+        // The desktop shell proves its paired device identity with a private
+        // request header. This bypass is limited to the Electron JARVIS window;
+        // browser and mobile clients still require the short-lived unlock.
+        const desktopDevice =
+          req.headers.get("x-jarvis-desktop") === "1" ? await authenticateAgent(req) : null;
         const bridge =
-          unlockedFor === userId && isOwnerUser(user)
-            ? await bridgeContextFor(userId)
+          (unlockedFor === userId && isOwnerUser(user)) ||
+          (desktopDevice?.userId === userId && isOwnerUser(user))
+            ? await bridgeContextFor(userId, desktopDevice?.id)
             : null;
 
         const { content: baseSystemPrompt } = await buildSystemPrompt(userId, userText);
