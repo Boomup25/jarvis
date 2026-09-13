@@ -54,7 +54,7 @@ export default async function Dashboard() {
   const hasRail = tasks.length > 0 || recentPages.length > 0 || insights.topPages.length > 0;
 
   return (
-    <main className="h-full overflow-y-auto overscroll-contain px-4 pb-10 page-top lg:px-8 lg:page-top-wide">
+    <main className="relative h-full overflow-y-auto overscroll-contain px-4 pb-10 page-top lg:px-8 lg:page-top-wide">
       <div className="mx-auto w-full max-w-lg md:max-w-2xl lg:max-w-6xl">
         <DashboardHeaderActions isOwner={user.role === "owner"} />
 
@@ -85,7 +85,7 @@ export default async function Dashboard() {
                   Good {partOfDay}, {profile.displayName}.
                 </h1>
 
-                <div className="mt-4 w-full glass p-4 lg:mt-3">
+                <div className="mt-4 w-full surface-card p-4 lg:mt-3">
                   <Greeting
                     fallback={
                       hasData
@@ -105,7 +105,7 @@ export default async function Dashboard() {
             </section>
 
             {/* ---- KPI row --------------------------------------------- */}
-            <section className="mt-6 grid grid-cols-4 gap-2 lg:mt-8 lg:gap-3">
+            <section className="mt-6 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:mt-8 lg:gap-3">
               <StatTile
                 label="This week"
                 value={insights.thisWeek}
@@ -120,7 +120,7 @@ export default async function Dashboard() {
                 link here rather than a fifth tab nobody can reach with a thumb. */}
             <Link
               href="/week"
-              className="notch-tr mt-2 flex items-center justify-between gap-3 border border-edge bg-panel/40 px-3.5 py-3 transition-colors hover:border-arc/40"
+              className="surface-hover notch-tr mt-2 flex items-center justify-between gap-3 border border-edge bg-panel/40 px-3.5 py-3"
             >
               <span className="flex items-center gap-2.5 text-[0.85rem]">
                 <SparkIcon className="size-4 shrink-0 text-gold" aria-hidden />
@@ -133,7 +133,7 @@ export default async function Dashboard() {
 
             {/* ---- charts ---------------------------------------------- */}
             {insights.totals.logs > 0 ? (
-              <section className="mt-6 glass p-4 lg:p-6">
+              <section className="surface-card mt-6 p-4 lg:p-6">
                 <ActivityHeatmap cells={insights.heatmap} />
                 <hr className="my-5 border-edge/60" />
                 <WeekTrend series={insights.weeklySeries} />
@@ -186,7 +186,7 @@ export default async function Dashboard() {
                     {tasks.map((task) => (
                       <li
                         key={task.id}
-                        className="flex items-center gap-3 border border-edge bg-panel/50 px-3 py-2.5"
+                        className="surface-hover flex items-center gap-3 border border-edge bg-panel/50 px-3 py-2.5"
                       >
                         <CheckIcon className="size-4 shrink-0 text-mist" aria-hidden />
                         <span className="flex-1 truncate text-[0.85rem]">{task.title}</span>
@@ -219,7 +219,7 @@ export default async function Dashboard() {
                         <li key={page.slug}>
                           <Link
                             href={`/pages/${page.slug}`}
-                            className="flex items-center gap-3 border border-edge bg-panel/50 px-3 py-2.5 transition-colors hover:border-arc/40"
+                            className="surface-hover flex items-center gap-3 border border-edge bg-panel/50 px-3 py-2.5"
                           >
                             <Icon className="size-4 shrink-0 text-arc" aria-hidden />
                             <span className="flex-1 truncate text-[0.85rem]">{page.title}</span>
@@ -242,7 +242,7 @@ export default async function Dashboard() {
                       <li key={page.slug}>
                         <Link
                           href={`/pages/${page.slug}`}
-                          className="flex items-center gap-3 border border-edge bg-panel/50 px-3 py-2.5 transition-colors hover:border-arc/40"
+                          className="surface-hover flex items-center gap-3 border border-edge bg-panel/50 px-3 py-2.5"
                         >
                           <span className="flex-1 truncate text-[0.85rem]">{page.title}</span>
                           <span className="shrink-0 font-mono text-[0.68rem] text-arc">

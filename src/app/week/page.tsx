@@ -24,7 +24,7 @@ export default async function WeekPage() {
 
         <header className="mt-3">
           <div className="flex items-baseline justify-between gap-3">
-            <h1 className="text-xl font-semibold lg:text-2xl">Your week</h1>
+          <h1 className="page-title">Your week</h1>
             <span className="readout shrink-0">{week.rangeLabel}</span>
           </div>
           <p className="mt-1.5 text-[0.95rem] leading-snug text-frost lg:text-[1.05rem]">
@@ -47,7 +47,7 @@ export default async function WeekPage() {
         {/* ---- the four numbers ---------------------------------------- */}
         <section className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:gap-3">
           {week.metrics.map((m) => (
-            <div key={m.key} className="brackets border border-edge bg-panel/50 px-3 py-3">
+            <div key={m.key} className="surface-card brackets px-3 py-3">
               <p className="font-mono text-2xl leading-none text-frost">{m.value}</p>
               <p className="readout mt-1.5">{m.label}</p>
               {(m.value > 0 || m.previous > 0) && (
@@ -65,7 +65,7 @@ export default async function WeekPage() {
         </section>
 
         {/* ---- the week, day by day ------------------------------------ */}
-        <section className="mt-5 glass p-4 lg:p-5">
+        <section className="surface-card mt-5 p-4 lg:p-5">
           <WeekDays days={week.days} />
         </section>
 
@@ -166,12 +166,12 @@ function WinList({
                 {win.href ? (
                   <Link
                     href={win.href}
-                    className="flex items-center gap-3 border border-edge bg-panel/50 px-3 py-2.5 transition-colors hover:border-arc/40"
+                    className="surface-hover flex items-center gap-3 rounded-xl border border-edge bg-panel/50 px-3 py-2.5"
                   >
                     {row}
                   </Link>
                 ) : (
-                  <div className="flex items-center gap-3 border border-edge bg-panel/50 px-3 py-2.5">
+                  <div className="surface-card flex items-center gap-3 px-3 py-2.5">
                     {row}
                   </div>
                 )}

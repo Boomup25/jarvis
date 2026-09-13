@@ -34,8 +34,9 @@ export default async function LibraryPage({
   return (
     <main className="h-full overflow-y-auto overscroll-contain px-4 pb-10 page-top lg:px-8 lg:page-top-wide">
       <div className="mx-auto w-full max-w-lg md:max-w-2xl lg:max-w-6xl">
-      <h1 className="text-xl font-semibold">Library</h1>
-      <p className="mt-1 text-[0.8rem] text-mist">
+      <p className="page-kicker">Knowledge base</p>
+      <h1 className="page-title mt-2">Library</h1>
+      <p className="mt-2 text-[0.82rem] text-mist">
         Everything JARVIS has written down for you.
       </p>
 
@@ -67,7 +68,7 @@ export default async function LibraryPage({
               <li key={page.slug}>
                 <Link
                   href={`/pages/${page.slug}`}
-                  className="block h-full rounded-xl border border-edge bg-panel/50 p-3.5 transition-colors hover:border-arc/40"
+                  className="surface-hover block h-full rounded-2xl border border-edge bg-panel/50 p-4"
                 >
                   <div className="flex items-start gap-3">
                     <Icon className="mt-0.5 size-4 shrink-0 text-arc" />
@@ -98,7 +99,7 @@ function FilterChip({ href, active, label, count }: { href: string; active: bool
   return (
     <Link
       href={href}
-      className={`shrink-0 rounded-full border px-3 py-1.5 text-[0.75rem] capitalize transition-colors ${
+        className={`shrink-0 rounded-full border px-3 py-1.5 text-[0.75rem] capitalize transition-colors ${
         active ? "border-arc/50 bg-arc/12 text-arc" : "border-edge text-mist hover:text-frost"
       }`}
     >

@@ -159,7 +159,7 @@ export function HistorySheet({
     <div className="fixed inset-0 z-50 flex flex-col justify-end">
       <button aria-label="Close" onClick={onClose} className="absolute inset-0 bg-void/75 backdrop-blur-sm" />
 
-      <div className="safe-bottom relative flex max-h-[85dvh] flex-col border-t border-edge bg-abyss/95 backdrop-blur-xl">
+      <div className="safe-bottom glass relative flex max-h-[85dvh] flex-col rounded-t-2xl border-t border-edge bg-abyss/95 backdrop-blur-xl">
         <div className="shrink-0 pt-3">
           <div className="mx-auto mb-3 h-1 w-9 rounded-full bg-edge" />
         </div>
@@ -178,7 +178,7 @@ export function HistoryRail({
   currentId?: string;
 }) {
   return (
-    <aside className="hidden w-72 shrink-0 flex-col border-l border-edge bg-abyss/40 pt-4 xl:flex">
+    <aside className="hidden w-80 shrink-0 flex-col border-l border-edge/80 bg-void/35 pt-4 xl:flex">
       <ConversationList active onPick={onPick} currentId={currentId} />
     </aside>
   );

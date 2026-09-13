@@ -218,7 +218,7 @@ export function NotificationSettings() {
     save({ mutedKinds: muted.includes(id) ? muted.filter((k) => k !== id) : [...muted, id] });
 
   return (
-    <section>
+    <section className="surface-card p-4">
       <div className="flex items-center gap-2 text-[0.7rem] uppercase tracking-[0.18em] text-mist">
         <BellIcon className="size-3.5" />
         Notifications

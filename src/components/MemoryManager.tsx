@@ -122,17 +122,18 @@ export function MemoryManager({
     <main className="h-full overflow-y-auto overscroll-contain px-4 pb-10 page-top lg:px-8 lg:page-top-wide">
       <div className="mx-auto w-full max-w-lg md:max-w-2xl lg:max-w-6xl">
       <div className="flex items-center gap-3">
-        <BrainIcon className="size-6 text-violet" />
+        <span className="flex size-10 items-center justify-center rounded-xl bg-violet/[0.12]"><BrainIcon className="size-5 text-violet" /></span>
         <div>
-          <h1 className="text-xl font-semibold">Memory</h1>
-          <p className="text-[0.78rem] text-mist">{memories.length} things JARVIS knows about you.</p>
+          <p className="page-kicker">Personal context</p>
+          <h1 className="page-title mt-1">Memory</h1>
+          <p className="mt-1 text-[0.78rem] text-mist">{memories.length} things JARVIS knows about you.</p>
         </div>
       </div>
 
       {/* Identity is a short form that never grows; the memory list is the part
           that does. Side by side from lg so neither pushes the other down. */}
       <div className="lg:mt-2 lg:grid lg:grid-cols-[19rem_minmax(0,1fr)] lg:items-start lg:gap-7">
-      <section className="mt-5 rounded-2xl glass p-4 lg:sticky lg:top-0">
+      <section className="surface-card mt-5 p-4 lg:sticky lg:top-0">
         <h2 className="text-[0.7rem] uppercase tracking-[0.18em] text-mist">Identity</h2>
         <div className="mt-3 space-y-2.5">
           <Field
@@ -223,7 +224,7 @@ export function MemoryManager({
                 {items.map((item) => (
                   <li
                     key={item.id}
-                    className="group flex items-start gap-2.5 rounded-xl border border-edge bg-panel/50 px-3 py-2.5"
+                    className="surface-hover group flex items-start gap-2.5 rounded-xl border border-edge bg-panel/50 px-3 py-2.5"
                   >
                     <span
                       className="mt-1.5 size-1.5 shrink-0 rounded-full"

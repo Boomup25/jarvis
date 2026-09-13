@@ -37,12 +37,13 @@ function LoginForm() {
   }
 
   return (
-    <form onSubmit={submit} className="w-full max-w-xs space-y-4 text-center">
-      <ReactorOrb state="idle" className="mx-auto size-28" />
+    <form onSubmit={submit} className="surface-card w-full max-w-sm space-y-4 p-6 text-center sm:p-8">
+      <ReactorOrb state="idle" className="mx-auto size-24" />
 
       <div>
-        <h1 className="text-lg font-semibold tracking-[0.3em]">JARVIS</h1>
-        <p className="readout mt-1">Authentication required</p>
+        <p className="page-kicker">Personal intelligence system</p>
+        <h1 className="mt-2 text-2xl font-semibold tracking-[0.24em]">JARVIS</h1>
+        <p className="mt-1 text-[0.76rem] text-mist">Sign in to continue</p>
       </div>
 
       <input

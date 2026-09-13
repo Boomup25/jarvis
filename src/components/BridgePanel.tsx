@@ -369,7 +369,7 @@ export function BridgePanel() {
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <section className="mb-3">
+    <section className="surface-card mb-3 p-4">
       <div className="flex items-center gap-2 text-[0.7rem] uppercase tracking-[0.18em] text-mist">
         <CheckIcon className="size-3.5" />
         Bridge

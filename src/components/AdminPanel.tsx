@@ -131,7 +131,7 @@ export function AdminPanel() {
             {invites.map((invite) => (
               <li
                 key={invite.id}
-                className="flex items-center gap-3 border border-edge bg-panel/40 px-3 py-2.5"
+                className="surface-hover flex items-center gap-3 rounded-xl border border-edge bg-panel/40 px-3 py-2.5"
               >
                 <div className="min-w-0 flex-1">
                   <p className="font-mono text-[0.82rem] tracking-wider">{invite.code}</p>
@@ -182,7 +182,7 @@ export function AdminPanel() {
             const used = user.usage.chat ?? 0;
             const pct = user.monthlyQuota > 0 ? Math.min(100, (used / user.monthlyQuota) * 100) : 0;
             return (
-              <li key={user.id} className="border border-edge bg-panel/40 p-3">
+              <li key={user.id} className="surface-card p-3">
                 <div className="flex items-center gap-2">
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[0.88rem] font-medium">

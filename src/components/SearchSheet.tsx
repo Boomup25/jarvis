@@ -66,7 +66,7 @@ export function SearchSheet({ open, onClose }: { open: boolean; onClose: () => v
     <div className="fixed inset-0 z-50 flex flex-col">
       <button aria-label="Close" onClick={onClose} className="absolute inset-0 bg-void/85 backdrop-blur-sm" />
 
-      <div className="relative mx-auto flex h-full w-full max-w-lg flex-col px-4 pt-[calc(1rem+env(safe-area-inset-top))]">
+      <div className="relative mx-auto flex h-full w-full max-w-2xl flex-col px-4 pt-[calc(1rem+env(safe-area-inset-top))] sm:px-6">
         <div className="relative shrink-0">
           <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-mist" />
           <input
@@ -74,7 +74,7 @@ export function SearchSheet({ open, onClose }: { open: boolean; onClose: () => v
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search everything"
-            className="w-full border border-edge bg-abyss/90 py-3 pl-9 pr-16 text-[0.95rem] placeholder:text-mist/50 focus:border-arc/50 focus:outline-none"
+            className="w-full rounded-xl border border-edge bg-panel/80 py-3 pl-9 pr-16 text-[0.95rem] placeholder:text-mist/50 focus:border-arc/50 focus:outline-none"
           />
           <button
             onClick={onClose}
@@ -112,7 +112,7 @@ export function SearchSheet({ open, onClose }: { open: boolean; onClose: () => v
                   <Link
                     href={hit.url}
                     onClick={onClose}
-                    className="flex items-start gap-3 border border-edge bg-panel/50 px-3 py-2.5 transition-colors hover:border-arc/40"
+                    className="surface-hover flex items-start gap-3 rounded-xl border border-edge bg-panel/50 px-3 py-3"
                   >
                     <Icon className="mt-0.5 size-3.5 shrink-0 text-arc" />
                     <div className="min-w-0 flex-1">

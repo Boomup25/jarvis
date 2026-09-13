@@ -65,12 +65,12 @@ export function PageEditor({
   if (!editing) {
     return (
       <>
-        <article className="mt-6 border border-edge bg-panel/40 p-4">
+        <article className="surface-card mt-6 p-5 lg:p-6">
           <Markdown>{initialContent}</Markdown>
         </article>
         <button
           onClick={() => setEditing(true)}
-          className="mt-3 w-full border border-edge py-2.5 text-[0.8rem] text-mist transition-colors hover:border-arc/40 hover:text-frost"
+          className="surface-hover mt-3 w-full rounded-xl border border-edge bg-panel/30 py-2.5 text-[0.8rem] text-mist hover:text-frost"
         >
           Edit this page
         </button>

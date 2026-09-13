@@ -49,11 +49,13 @@ export function SideNav({ user }: { user: { displayName: string; role: string } 
   if (!user || pathname === "/login" || pathname === "/signup") return null;
 
   return (
-    <nav className="hidden w-60 shrink-0 flex-col border-r border-edge bg-abyss/60 backdrop-blur-xl lg:flex">
-      <div className="flex items-center gap-2.5 px-5 pb-4 pt-5">
-        <ArcReactor className="size-7 text-arc" />
+    <nav className="hidden w-[17rem] shrink-0 flex-col border-r border-edge/80 bg-void/55 px-3 py-3 backdrop-blur-2xl lg:flex">
+      <div className="flex items-center gap-3 rounded-xl border border-edge/70 bg-panel/35 px-3.5 py-3">
+        <span className="flex size-9 items-center justify-center rounded-lg bg-arc/[0.08]">
+          <ArcReactor className="size-6 text-arc" />
+        </span>
         <div className="min-w-0">
-          <p className="text-[0.82rem] font-semibold tracking-[0.24em]">JARVIS</p>
+          <p className="text-[0.84rem] font-semibold tracking-[0.24em]">JARVIS</p>
           <p className="readout mt-0.5 flex items-center gap-1.5">
             <span className="live-dot size-1 rounded-full bg-jade" />
             Online
@@ -63,7 +65,7 @@ export function SideNav({ user }: { user: { displayName: string; role: string } 
 
       <div className="rule-fade mx-5" />
 
-      <ul className="mt-4 space-y-0.5 px-3">
+      <ul className="mt-5 space-y-1 px-1">
         {TABS.map(({ href, label, Icon }) => {
           const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
           return (
@@ -73,9 +75,9 @@ export function SideNav({ user }: { user: { displayName: string; role: string } 
                 aria-current={active ? "page" : undefined}
                 className={`relative flex items-center gap-3 px-3 py-2.5 text-[0.82rem] transition-colors ${
                   active
-                    ? "bg-arc/[0.08] text-arc"
+                    ? "bg-arc/[0.10] text-arc shadow-[inset_0_0_24px_rgba(79,216,255,0.04)]"
                     : "text-mist hover:bg-panel/50 hover:text-frost"
-                }`}
+                  }`}
               >
                 {active && (
                   <span className="absolute inset-y-1 left-0 w-px bg-arc shadow-[0_0_8px_var(--color-arc)]" />
@@ -88,10 +90,10 @@ export function SideNav({ user }: { user: { displayName: string; role: string } 
         })}
       </ul>
 
-      <div className="mt-5 px-3">
+      <div className="mt-5 px-1">
         <button
           onClick={openSearch}
-          className="flex w-full items-center gap-3 border border-edge px-3 py-2.5 text-[0.8rem] text-mist transition-colors hover:border-arc/40 hover:text-frost"
+          className="flex w-full items-center gap-3 rounded-xl border border-edge/80 bg-panel/25 px-3 py-2.5 text-[0.8rem] text-mist transition-colors hover:border-arc/40 hover:bg-panel/60 hover:text-frost"
         >
           <SearchIcon className="size-[17px] shrink-0" />
           <span className="flex-1 text-left">Search</span>
@@ -103,7 +105,7 @@ export function SideNav({ user }: { user: { displayName: string; role: string } 
 
       <div className="rule-fade mx-5" />
 
-      <div className="px-3 pb-5 pt-3">
+      <div className="px-1 pb-2 pt-3">
         {user.role === "owner" && (
           <Link
             href="/admin"

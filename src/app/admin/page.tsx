@@ -19,8 +19,9 @@ export default async function AdminPage() {
         <Link href="/" className="readout hover:text-frost">
           ← Brief
         </Link>
-        <h1 className="mt-3 text-xl font-semibold">People</h1>
-        <p className="mt-1 text-[0.8rem] text-mist">
+        <p className="page-kicker mt-3">Administration</p>
+        <h1 className="page-title mt-2">People</h1>
+        <p className="mt-2 text-[0.82rem] text-mist">
           Invites, quotas and what everyone has used this month.
         </p>
         <AdminPanel />

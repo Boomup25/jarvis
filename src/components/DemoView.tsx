@@ -107,7 +107,7 @@ export function DemoView() {
 
   return (
     <main className="mx-auto flex h-full w-full max-w-3xl flex-col overflow-y-auto px-4 py-6 sm:px-6">
-      <header className="mb-5 flex items-center justify-between gap-4">
+      <header className="mb-5 flex items-center justify-between gap-4 rounded-2xl border border-edge/70 bg-panel/30 px-4 py-3">
         <div>
           <p className="readout text-arc">PUBLIC DEMO</p>
           <h1 className="mt-1 text-xl font-semibold tracking-[0.25em]">JARVIS</h1>
@@ -115,11 +115,11 @@ export function DemoView() {
         <Link href="/login" className="readout text-arc hover:underline">Sign in</Link>
       </header>
 
-      <div className="mb-4 border border-edge bg-void/40 px-4 py-3 text-xs text-mist">
+      <div className="mb-4 rounded-xl border border-arc/20 bg-arc/[0.04] px-4 py-3 text-xs text-mist">
         No account data, tools, computer access, or saved history are available here. Messages are limited and handled by one fast free model.
       </div>
 
-      <section className="mb-5 border border-edge bg-void/30 p-4 sm:p-5">
+      <section className="surface-card mb-5 p-4 sm:p-5">
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>
             <p className="readout text-arc">DEMO DASHBOARD · SAMPLE DATA</p>
@@ -177,7 +177,7 @@ export function DemoView() {
 
       <DemoGallery />
 
-      <section className="min-h-[16rem] flex-1 space-y-4 overflow-y-auto border border-edge bg-void/30 p-4" aria-live="polite">
+      <section className="min-h-[16rem] flex-1 space-y-4 overflow-y-auto rounded-2xl border border-edge bg-void/30 p-4" aria-live="polite">
         {messages.map((message, index) => (
           <div key={`${message.role}-${index}`} className={message.role === "user" ? "ml-auto max-w-[85%]" : "max-w-[85%]"}>
             <p className="readout mb-1 text-mist/60">{message.role === "user" ? "YOU" : "JARVIS"}</p>
