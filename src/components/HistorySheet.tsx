@@ -173,13 +173,28 @@ export function HistorySheet({
 export function HistoryRail({
   onPick,
   currentId,
+  collapsed = false,
+  onToggle,
 }: {
   onPick: (id: string) => void;
   currentId?: string;
+  collapsed?: boolean;
+  onToggle?: () => void;
 }) {
   return (
-    <aside className="hidden w-80 shrink-0 flex-col border-l border-edge/80 bg-void/35 pt-4 xl:flex">
-      <ConversationList active onPick={onPick} currentId={currentId} />
+    <aside className={`hidden shrink-0 flex-col border-l border-edge/80 bg-void/35 pt-4 transition-[width] duration-200 xl:flex ${collapsed ? "w-12" : "w-80"}`}>
+      {onToggle && (
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-label={collapsed ? "Show conversations" : "Hide conversations"}
+          aria-expanded={!collapsed}
+          className="mx-2 mb-2 flex h-8 items-center justify-center border border-edge text-mist transition-colors hover:border-arc/50 hover:text-arc"
+        >
+          <span aria-hidden className="text-lg leading-none">{collapsed ? "›" : "‹"}</span>
+        </button>
+      )}
+      {!collapsed && <ConversationList active onPick={onPick} currentId={currentId} />}
     </aside>
   );
 }

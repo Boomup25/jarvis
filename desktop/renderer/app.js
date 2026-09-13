@@ -43,7 +43,10 @@ function setStatus(next) {
 function showSetup() {
   setup.classList.remove("hidden");
   const paired = state.paired;
-  const autoUnlock = paired && state.autoUnlock && state.state !== "stopped";
+  // A paired desktop install keeps its passphrase in Windows-protected
+  // storage. Never make the user type it again just because the bridge is
+  // still starting (or briefly reconnecting).
+  const autoUnlock = paired && state.autoUnlock;
   pairForm.classList.toggle("hidden", paired);
   unlockForm.classList.toggle("hidden", !paired || autoUnlock);
   setupTitle.textContent = paired ? (autoUnlock ? "Starting automatically" : "Unlock this computer") : "Connect this computer";

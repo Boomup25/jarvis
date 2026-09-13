@@ -60,6 +60,7 @@ export function ReactorOrb({
   const activityRef = useRef(activityAt);
   /** Timestamp of the last tap — drives the impact ripple. */
   const pressRef = useRef(0);
+  const hoverRef = useRef(false);
 
   const amplitudeSourceRef = useRef<{ current: number } | undefined>(amplitudeRef);
 
@@ -173,6 +174,9 @@ export function ReactorOrb({
       const sincePress = t > 0 ? Date.now() - pressRef.current : Infinity;
       const impulse = pressRef.current ? Math.max(0, 1 - sincePress / 420) : 0;
       target += impulse * 0.75;
+      // Hovering is an intentional affordance on desktop: the reactor leans
+      // toward the pointer with a little extra energy before it is pressed.
+      target += hoverRef.current ? 0.14 : 0;
 
       smoothLevel += (levelRef.current - smoothLevel) * 0.25;
       smoothEnergy += (target - smoothEnergy) * (orbState === "listening" ? 0.32 : 0.09);
@@ -334,8 +338,10 @@ export function ReactorOrb({
       onPointerDown={() => {
         pressRef.current = Date.now();
       }}
+      onPointerEnter={() => { hoverRef.current = true; }}
+      onPointerLeave={() => { hoverRef.current = false; }}
       onClick={onPress}
-      className={`relative block cursor-pointer touch-manipulation transition-transform active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-arc ${className ?? ""}`}
+      className={`relative block cursor-pointer touch-manipulation transition-transform hover:scale-[1.04] hover:drop-shadow-[0_0_24px_rgba(79,216,255,0.28)] active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-arc ${className ?? ""}`}
     >
       {canvas}
     </button>

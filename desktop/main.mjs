@@ -17,6 +17,7 @@ let windowRef;
 let jarvisWindow = null;
 let orbWindow = null;
 let bridgeProcess = null;
+let bridgeStopRequested = false;
 let bridgeState = "stopped";
 let preferences = {};
 let transcriberPromise = null;
@@ -297,6 +298,7 @@ function spawnNode(args, extraEnv = {}) {
 function startBridge(passphrase) {
   if (bridgeProcess) return { ok: false, error: "Bridge is already running." };
   if (!existsSync(bridgePath)) return { ok: false, error: `Bridge files were not found at ${bridgePath}` };
+  bridgeStopRequested = false;
   bridgeProcess = spawnNode([bridgePath, "start"], {
     JARVIS_BRIDGE_PASSPHRASE: passphrase,
     JARVIS_LAUNCH_APPS: JSON.stringify(launchAccess()),
@@ -315,14 +317,24 @@ function startBridge(passphrase) {
     setState("stopped", error.message);
   });
   bridgeProcess.on("exit", (code, signal) => {
+    const shouldReconnect = !bridgeStopRequested && !app.isQuitting;
     bridgeProcess = null;
     setState("stopped", `Exited (${code ?? signal ?? "unknown"})`);
     send("bridge-log", `\nBridge stopped (${code ?? signal ?? "unknown"}).\n`);
+    if (shouldReconnect) {
+      send("bridge-log", "Bridge will retry automatically in a moment.\n");
+      setTimeout(async () => {
+        if (bridgeProcess || app.isQuitting) return;
+        const nextPassphrase = await unlockPassphrase();
+        if (nextPassphrase) startBridge(nextPassphrase);
+      }, 2000);
+    }
   });
   return { ok: true };
 }
 function stopBridge() {
   if (!bridgeProcess) return { ok: true };
+  bridgeStopRequested = true;
   bridgeProcess.kill();
   setState("stopping");
   return { ok: true };
@@ -570,6 +582,11 @@ function allowMicrophone(session) {
 
 function positionOrbWindow() {
   if (!orbWindow || orbWindow.isDestroyed()) return;
+  const saved = preferences.orbBounds;
+  if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) {
+    orbWindow.setPosition(Math.round(saved.x), Math.round(saved.y), false);
+    return;
+  }
   const { workArea } = screen.getPrimaryDisplay();
   const margin = 22;
   const [width, height] = orbWindow.getSize();
@@ -604,6 +621,12 @@ function createOrbWindow() {
     },
   });
   allowMicrophone(orbWindow.webContents.session);
+  orbWindow.on("moved", () => {
+    if (!orbWindow || orbWindow.isDestroyed()) return;
+    const [x, y] = orbWindow.getPosition();
+    preferences.orbBounds = { x, y };
+    savePreferences();
+  });
   orbWindow.on("closed", () => { orbWindow = null; });
   orbWindow.loadFile(join(__dirname, "renderer", "orb.html"));
   orbWindow.webContents.once("did-finish-load", () => {

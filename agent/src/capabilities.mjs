@@ -50,6 +50,7 @@ const APP_ALIASES = {
   steam: "steam.exe",
   teams: "msteams:",
   "microsoft teams": "msteams:",
+  "ms teams": "msteams:",
   terminal: "wt.exe",
   "task manager": "taskmgr.exe",
   "visual studio code": "code.exe",
@@ -431,7 +432,12 @@ const handlers = {
     }
 
     const isUrl = /^https?:\/\//i.test(target);
-    const alias = APP_ALIASES[appAlias(target)];
+    // New Teams is installed as a WindowsApps launcher that is intentionally
+    // outside shared folders. Treat that known launcher as the safe Teams
+    // alias instead of sending it through the file path guard.
+    const teamsLauncher = platform() === "win32" &&
+      (/(?:^|[\\/])ms-?teams\.exe$/i.test(target) || /[\\/]WindowsApps[\\/].*teams/i.test(target));
+    const alias = APP_ALIASES[appAlias(target)] ?? (teamsLauncher ? "msteams:" : undefined);
     const aliasKey = alias === "explorer.exe"
       ? "app:explorer"
       : alias === "code.exe"
@@ -442,11 +448,7 @@ const handlers = {
     if (alias && !launchIsAllowed(config, aliasKey)) {
       throw new Refused(`Launching ${target} is disabled in Bridge Settings.`);
     }
-    const opened = isUrl
-      ? target
-      : alias && !isAbsolute(target)
-        ? alias
-        : await safePath(target, config);
+    const opened = isUrl ? target : alias ? alias : await safePath(target, config);
 
     if (platform() === "win32") {
       // `start` is a cmd builtin; the empty string is the window title, which

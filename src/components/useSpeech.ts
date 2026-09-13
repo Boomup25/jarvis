@@ -1007,7 +1007,10 @@ export function useSpeechOutput() {
       if (cueOnlyRef.current) return;
       if (spokenRef.current >= SPEAK_BUDGET) return;
 
-      const cleaned = clean(fullText);
+      // Apply the same delivery-direction filter used by one-shot speech so
+      // streamed replies never literally say “pauses briefly” or “clears
+      // throat”.
+      const cleaned = cleanSpeech(fullText);
       if (cleaned.length <= consumedRef.current) return;
 
       bufferRef.current += cleaned.slice(consumedRef.current);

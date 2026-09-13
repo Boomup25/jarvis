@@ -81,6 +81,15 @@ body { -webkit-app-region: drag; }
 }
 
 #orb:hover .status { opacity: 1; }
+#orb:hover .ring-one {
+  border-color: rgba(140, 236, 255, .95);
+  box-shadow: 0 0 26px rgba(30, 210, 255, .7), inset 0 0 20px rgba(30, 190, 255, .24);
+}
+
+#orb:hover .core {
+  transform: scale(1.08);
+  box-shadow: 0 0 29px rgba(88, 225, 255, 1), 0 0 58px rgba(17, 135, 203, .58);
+}
 
 #orb.transcribing .ring-one, #orb.speaking .ring-one {
   animation: breathe .75s ease-in-out infinite;

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Markdown } from "./Markdown";
 import { isElectron, useSpeechInput, useSpeechOutput } from "./useSpeech";
@@ -133,6 +134,7 @@ export function ChatView({
   const [conversationId, setConversationId] = useState<string | undefined>(initialConversationId);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyRailOpen, setHistoryRailOpen] = useState(true);
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [activeModel, setActiveModel] = useState<string | null>(null);
   const [latency, setLatency] = useState<number | null>(null);
@@ -170,6 +172,7 @@ export function ChatView({
   const closingRef = useRef(false);
   const [closing, setClosing] = useState(false);
   const oneShotCandidateRef = useRef(false);
+  const cueCandidateRef = useRef(false);
   const machineActionRef = useRef(false);
   const cueModeRef = useRef(false);
   const cueResultRef = useRef(false);
@@ -182,6 +185,7 @@ export function ChatView({
   const fileRef = useRef<HTMLInputElement>(null);
 
   const voice = useSpeechOutput();
+  const router = useRouter();
   const soundCues = useSoundCues(soundCuesEnabled && voice.enabled);
   const micLevel = useMicLevel();
 
@@ -298,6 +302,7 @@ export function ChatView({
       }
 
       oneShotCandidateRef.current = sessionRef.current === "active" && looksLikeOneShotTask(trimmed);
+      cueCandidateRef.current = looksLikeOneShotTask(trimmed);
       machineActionRef.current = false;
       cueModeRef.current = false;
       cueResultRef.current = false;
@@ -405,7 +410,7 @@ export function ChatView({
                 setStatus(TOOL_LABELS[event.name as keyof typeof TOOL_LABELS] ?? "Working");
                 if (
                   soundCuesEnabled &&
-                  oneShotCandidateRef.current &&
+                  cueCandidateRef.current &&
                   String(event.name).startsWith("computer_") &&
                   !cueModeRef.current
                 ) {
@@ -448,6 +453,10 @@ export function ChatView({
                 setConversationId(event.conversationId);
                 setStatus(null);
                 returnToWakeRef.current = oneShotCandidateRef.current && machineActionRef.current;
+                // Assistant tools can mutate tasks, pages, memories, and
+                // activity. Refresh the current server-backed view so those
+                // changes are visible immediately after the reply finishes.
+                router.refresh();
                 voice.endFeed();
                 break;
               case "error":
@@ -473,7 +482,7 @@ export function ChatView({
         voice.setCueOnly(false);
       }
     },
-    [busy, conversationId, voice, attachment, soundCues, soundCuesEnabled]
+    [busy, conversationId, voice, attachment, soundCues, soundCuesEnabled, router]
   );
 
   const mic = useSpeechInput(
@@ -1167,7 +1176,12 @@ export function ChatView({
       </div>
 
       {/* Always-visible conversation list, from xl up. */}
-      <HistoryRail onPick={loadConversation} currentId={conversationId} />
+      <HistoryRail
+        onPick={loadConversation}
+        currentId={conversationId}
+        collapsed={!historyRailOpen}
+        onToggle={() => setHistoryRailOpen((open) => !open)}
+      />
 
       <HistorySheet
         open={historyOpen}
