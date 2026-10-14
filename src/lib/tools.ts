@@ -259,10 +259,45 @@ const tools: Record<string, ToolDef> = {
         tasks: tasks.map((t) => ({
           id: t.id,
           title: t.title,
+          notes: t.notes,
           done: t.done,
           due: t.dueAt?.toISOString() ?? null,
         })),
       };
+    },
+  },
+
+  delete_task: {
+    schema: {
+      type: "function",
+      function: {
+        name: "delete_task",
+        description:
+          "Permanently remove exactly one task from the user's list. Only call when the user explicitly asks to remove or delete it. First call list_tasks and use the exact task ID from its results. If the title does not identify one unique task, ask which one; never guess or delete a group of tasks unless the user explicitly asked for all of them.",
+        parameters: {
+          type: "object",
+          properties: {
+            task_id: { type: "string", description: "Exact ID returned by list_tasks for the one task to remove" },
+          },
+          required: ["task_id"],
+        },
+      },
+    },
+    handler: async (args, ctx) => {
+      const taskId = String(args.task_id ?? "").trim();
+      if (!taskId) return { ok: false, error: "task_id required; call list_tasks and use an exact returned ID" };
+
+      const task = await prisma.task.findFirst({
+        where: { id: taskId, userId: ctx.userId },
+        select: { id: true, title: true },
+      });
+      if (!task) return { ok: false, error: "Task not found in this user's list. Call list_tasks again and use an exact returned ID." };
+
+      const removed = await prisma.task.deleteMany({ where: { id: task.id, userId: ctx.userId } });
+      if (removed.count === 0) return { ok: false, error: "Task was already removed; no task was changed." };
+
+      ctx.emit({ type: "task_deleted", id: task.id, title: task.title });
+      return { ok: true, id: task.id, title: task.title };
     },
   },
 

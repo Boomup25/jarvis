@@ -29,6 +29,7 @@ export async function DELETE(_req: Request, { params }: Params) {
   const auth = await requireUser();
   if ("denied" in auth) return auth.denied;
   const { id } = await params;
-  await prisma.task.deleteMany({ where: { id, userId: auth.user.id } }).catch(() => null);
+  const deleted = await prisma.task.deleteMany({ where: { id, userId: auth.user.id } });
+  if (deleted.count === 0) return Response.json({ error: "Not found" }, { status: 404 });
   return Response.json({ ok: true });
 }

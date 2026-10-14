@@ -72,6 +72,7 @@ const TOOL_LABELS = {
   remember: "Committing to memory",
   add_task: "Adding task",
   list_tasks: "Reading tasks",
+  delete_task: "Removing task",
   log_activity: "Logging",
   recent_activity: "Reviewing week",
   computer_write_file: "Writing to your computer",
